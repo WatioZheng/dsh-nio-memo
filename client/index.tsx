@@ -66,7 +66,9 @@ const isIndexOnly = (s: CardState) => s === 'role' || s === 'exp'
 
 /** 功能开关（T4）：角色功能 / 经验卡；expEffective = 角色开 && 经验卡开 */
 interface Switches { roleEnabled: boolean; expEnabled: boolean; expEffective: boolean }
-const DEFAULT_SWITCHES: Switches = { roleEnabled: true, expEnabled: true, expEffective: true }
+/** 与宿主同口径：**出厂默认关**（缺行=关）——呈现极简，高级功能由用户自行探索开启。
+ *  旧数据没有 switches 字段时按此兜底（不得悄悄回到「默认开」）。 */
+const DEFAULT_SWITCHES: Switches = { roleEnabled: false, expEnabled: false, expEffective: false }
 
 /** 角色经验槽里的一项 */
 interface RoleExpRef { id: number; name: string; path: string; enabled: boolean; deleted: boolean }

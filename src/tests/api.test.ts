@@ -78,6 +78,12 @@ await ok("/api/all：列表卡**不带正文**，且标记 contentOmitted", asyn
     assert.equal(c.contentOmitted, true, `列表卡 ${c.name} 应标记 contentOmitted`);
   }
   assert.ok(json.switches && typeof json.switches.roleEnabled === "boolean", "应带开关状态");
+  // 出厂默认（2026-10-15 用户拍板）：呈现极简 ⇒ 角色 / 经验卡默认关（本临时库从未显式设过）
+  assert.deepEqual(
+    [json.switches.roleEnabled, json.switches.expEnabled, json.switches.expEffective],
+    [false, false, false],
+    "空库应走「缺行=关」的出厂默认",
+  );
 });
 await ok("/api/card?id=：能取回单卡全文（列表里被省略的那份）", async () => {
   const all = (await call("GET", "/nio-memo/api/all")).json;
@@ -100,7 +106,7 @@ await ok("/api/card：缺 id / 未知 id 一律显式报错", async () => {
 // ─────────────────────────────────────────────────────────────
 console.log("F4（/api/create 受功能开关约束）");
 await ok("开关全开：可建 备忘 / 角色 / 经验卡", async () => {
-  setSwitch(db, "role", true);
+  setSwitch(db, "role", true); setSwitch(db, "exp", true);   // 出厂默认关 ⇒ 本用例自己开
   const m = await call("POST", "/nio-memo/api/create", { name: "API备忘A", keywords: "a,b", content: "正文A_UNIQUE" });
   assert.equal(m.json.ok, true);
   assert.equal(m.json.card.state, "memo");

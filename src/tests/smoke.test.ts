@@ -89,6 +89,11 @@ ok("索引说明已落库（非兜底）", () => {
   assert.equal(n.fallback, false);
   assert.ok(n.text.includes("nio_memo"));
 });
+// ── 出厂默认（2026-10-15 用户拍板）：呈现极简，高级功能默认不启用 ──
+ok("出厂默认：角色 / 经验卡开关均为关（缺 meta 行 = 关）", () => {
+  const sw = getSwitches(db);
+  assert.deepEqual([sw.roleEnabled, sw.expEnabled, sw.expEffective], [false, false, false]);
+});
 
 console.log("注入矩阵");
 ok("铁律全文无条件注入", () => {
@@ -414,6 +419,7 @@ ok("T4 索引型不参与升/降（显式报错）", () => {
 });
 
 ok("T4 注入：角色进索引；经验卡名与正文**永不**进注入", () => {
+  setSwitch(db, "role", true); setSwitch(db, "exp", true);   // 出厂默认关 ⇒ 本用例自己开
   const txt = buildInjectText(db);
   assert.ok(txt.includes("手记 · 角色"), "应含角色段");
   assert.ok(txt.includes("角色/T4角色.md"), "应含角色路径");

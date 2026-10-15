@@ -846,17 +846,25 @@ export const SWITCH_ROLE = "role_enabled";
 export const SWITCH_EXP = "exp_enabled";
 
 export interface MemoSwitches {
-  /** 角色功能开关（默认开） */
+  /** 角色功能开关（**出厂默认关**：只有显式写过 "1" 才是开；缺行 / 空库 = 关） */
   roleEnabled: boolean;
-  /** 经验卡开关的**原设定值**（默认开；角色关闭时不清零，仅被压制） */
+  /** 经验卡开关的**原设定值**（同上默认关；角色关闭时不清零，仅被压制） */
   expEnabled: boolean;
   /** 经验卡**实际生效** = 角色开 && 经验卡开（角色关闭时压制经验卡） */
   expEffective: boolean;
 }
 
+/**
+ * 读开关。**出厂默认 = 关**（2026-10-15 用户拍板，T9 之后追加）：
+ * 只有显式写过 "1" 才算开；空库 / 缺 meta 行 / 从未点过开关 ⇒ 关。
+ *
+ * 设计口径（用户原话）：本插件对外**呈现极简**——高级功能要让用户**慢慢使用探索**，
+ * 而不是一装上来就把所有功能推到面前。故角色 / 经验卡默认不启用，入口留在「设置 → 高级」。
+ * 兼容：此前显式设过的机器（meta 里已有 "1"）不受影响，仍是开。
+ */
 export function getSwitches(db: DatabaseSync): MemoSwitches {
-  const roleEnabled = getMeta(db, SWITCH_ROLE) !== "0";
-  const expEnabled = getMeta(db, SWITCH_EXP) !== "0";
+  const roleEnabled = getMeta(db, SWITCH_ROLE) === "1";
+  const expEnabled = getMeta(db, SWITCH_EXP) === "1";
   return { roleEnabled, expEnabled, expEffective: roleEnabled && expEnabled };
 }
 
