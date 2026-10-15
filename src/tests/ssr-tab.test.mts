@@ -4,7 +4,14 @@
  */
 import * as React from "react";
 import { renderToString } from "react-dom/server";
+import * as nodeFs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { HandnoteTabView } from "../../client/index.tsx";
+
+// T6：CSS 只在运行时注入（SSR 输出里没有 <style>），故 tab 栏口径从**源码**断言
+const clientSrc = nodeFs.readFileSync(fileURLToPath(new URL("../../client/index.tsx", import.meta.url)), "utf8");
+const tabsRule = clientSrc.match(/\.nm2-tabs\{[^}]*\}/)?.[0] ?? "";
+const tabsBtnRule = clientSrc.match(/\.nm2-tabs button\{[^}]*\}/)?.[0] ?? "";
 
 const permBits = (enabled: boolean, cur: string | null) => ({
   permEnabled: enabled,
@@ -115,6 +122,10 @@ const checks: Array<[string, boolean]> = [
   ["首帧无数据不白屏（data=null 守卫）", htmlNoData.includes("加载中")],
   ["老数据无 switches 字段 ⇒ 兜底默认（不抛错）", htmlLegacy.includes("角色功能") && htmlLegacy.includes("经验卡")],
   ["老数据无 roles/exps ⇒ 规矩页正常渲染", htmlLegacyRoles.includes("手记卡片维护") && !htmlLegacyRoles.includes("主理角色")],
+  // ── T6：tab 栏不换行 + 横向滚动（修中文被压成竖排） ──
+  ["T6 按钮不压缩（flex:0 0 auto）", tabsBtnRule.includes("flex:0 0 auto")],
+  ["T6 按钮文字不换行（white-space:nowrap）", tabsBtnRule.includes("white-space:nowrap")],
+  ["T6 tab 栏不折行 + 可横滑", tabsRule.includes("flex-wrap:nowrap") && tabsRule.includes("overflow-x:auto")],
 ];
 let bad = 0;
 for (const [k, v] of checks) { console.log(`${v ? "✓" : "✗"} ${k}`); if (!v) bad++; }

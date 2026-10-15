@@ -104,8 +104,15 @@ const css = `
 .nm2-panel{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;box-sizing:border-box;overflow:hidden;font-family:var(--dsw-font-family,system-ui,sans-serif);color:var(--dsw-alias-label-primary,inherit)}
 .nm2-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px 10px;border-bottom:1px solid var(--dsw-alias-border-subtle,rgba(128,128,128,.18));box-sizing:border-box;flex-shrink:0}
 .nm2-head-title{font-size:15px;font-weight:700;letter-spacing:.06em}
-.nm2-tabs{display:flex;gap:8px}
-.nm2-tabs button{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;border:1px solid var(--dsw-alias-border-subtle,rgba(128,128,128,.22));background:transparent;color:var(--dsw-alias-label-secondary,#6b6f76);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+/* Tab 栏：**不换行 + 横向滚动**（T6）
+   原先按钮无 nowrap 且默认可压缩 ⇒ 行宽不够时按钮被压扁、中文逐字竖排（"规/矩 1/2"）。
+   现在：按钮不压缩（flex:0 0 auto）、文字不换行（nowrap），放不下就让**整个 tab 栏横滑**。
+   padding-bottom 给「选中态」的 box-shadow 留出不被 overflow 裁掉的余量；滚动条做细。 */
+.nm2-tabs{display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding-bottom:6px;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+.nm2-tabs::-webkit-scrollbar{height:6px}
+.nm2-tabs::-webkit-scrollbar-thumb{background:rgba(128,128,128,.35);border-radius:3px}
+.nm2-tabs::-webkit-scrollbar-track{background:transparent}
+.nm2-tabs button{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;border:1px solid var(--dsw-alias-border-subtle,rgba(128,128,128,.22));background:transparent;color:var(--dsw-alias-label-secondary,#6b6f76);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s,color .12s,border-color .12s;white-space:nowrap;flex:0 0 auto}
 .nm2-tabs button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12))}
 .nm2-tabs button.on{background:var(--dsw-alias-state-business-primary,#2563eb);border-color:transparent;color:#fff;box-shadow:0 2px 8px rgba(37,99,235,.28)}
 .nm2-tabs button b{font-size:11px;font-weight:600;opacity:.75}
