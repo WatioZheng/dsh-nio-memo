@@ -1,0 +1,7 @@
+# dsh-nio-memo bundle patch: host 插件行(被 profile bundle 机制自动应用)
+# 安装方式(二选一):
+#   a) dsh plugin --profile web add link:<本插件绝对路径>
+#   b) 手动: profile/node_modules 下建软链 + profile package.json 的 dsh.profile.bundles 里加 'dsh-nio-memo'
+- insert:
+    - id: dsh-nio-memo
+      name: 'dsh-nio-memo'

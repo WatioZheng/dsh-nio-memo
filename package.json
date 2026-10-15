@@ -1,0 +1,54 @@
+{
+  "name": "dsh-nio-memo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 全局「手记」插件：极简微型库（node:sqlite）——铁律锁死注入 + 动态规矩 + 备忘索引按需取卡，独立 Tab",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./src": "./src/index.ts",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "client",
+    "lib",
+    "scripts",
+    "cordis.yml",
+    "build-client.mjs",
+    "build-host.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "build:host": "node build-host.mjs",
+    "build:client": "node build-client.mjs",
+    "build": "node build-host.mjs && node build-client.mjs",
+    "gen:seed": "node scripts/gen-seed.mjs",
+    "test:smoke": "node --import tsx/esm src/tests/smoke.test.ts",
+    "test:ssr": "node --import tsx/esm src/tests/ssr-perm.test.mts",
+    "test": "node --import tsx/esm src/tests/smoke.test.ts && node --import tsx/esm src/tests/ssr-perm.test.mts && node --import tsx/esm src/tests/ssr-tab.test.mts",
+    "test:ssr-tab": "node --import tsx/esm src/tests/ssr-tab.test.mts"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=0.0.0",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-client-ui-conversation": "*",
+    "@deepseek-ai/dsh-client-runtime": "*"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.yml"
+    }
+  }
+}
