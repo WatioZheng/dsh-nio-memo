@@ -108,10 +108,13 @@ const checks: Array<[string, boolean]> = [
   ["T4 创建页有类型下拉（默认备忘）", htmlCreate.includes("<select") && htmlCreate.includes('value="memo"') && htmlCreate.includes("规矩（动态）")],
   ["T4 创建下拉含角色/经验卡选项", htmlCreate.includes('value="role"') && htmlCreate.includes('value="exp"')],
   ["T4 高级页只放两个开关", htmlAdvanced.includes("高级") && htmlAdvanced.includes("角色功能") && htmlAdvanced.includes("经验卡")],
-  ["T4 经验卡管理区可见", htmlExp.includes("经验卡") && htmlExp.includes("经验甲")],
+  ["T4 经验卡管理区可见（经验卡生效时）", htmlExp.includes("不进每轮注入") && htmlExp.includes("经验甲")],
   ["T4 角色功能关 ⇒ 角色 tab 隐藏（页面回落规矩页）", !htmlRoleOff.includes("主理角色")],
   ["T4 角色功能关 ⇒ 高级页提示经验卡不可启用", htmlAdvancedRoleOff.includes("不可启用")],
-  ["T4 经验卡关 ⇒ 管理区显示未生效提示", htmlExpOff.includes("未生效")],
+  // ── T7：经验卡不生效 ⇒ 「经验卡」子页签整体隐藏 + 回落到「创建」 ──
+  ["T7 经验卡关 ⇒ 子页签隐藏（房签内容消失）", !htmlExpOff.includes("不进每轮注入")],
+  ["T7 经验卡关 ⇒ 已回落创建页（不空屏）", htmlExpOff.includes("卡片类型")],
+  ["T7 经验卡关不清数据（绑定与卡片仍在数据里）", (dataRoleOff.exps ?? []).length === 1],
   // 角色内页「经验槽」
   ["T4 角色内页有「经验槽」板块", htmlRoleDetail.includes("经验槽")],
   ["T4 经验槽列出已绑经验卡（仅索引）", htmlRoleDetail.includes("经验甲") && htmlRoleDetail.includes("经验/经验甲.md")],

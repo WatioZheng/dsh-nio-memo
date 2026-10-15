@@ -514,7 +514,7 @@ export function HandnoteTabView(props: ConvViewProps & {
         tags: d.tags ?? [],
         switches: d.switches ?? DEFAULT_SWITCHES,
       })
-      if (sub === 'settings' && pane === 'trash') {
+      if (sub === 'settings' && paneEff === 'trash') {
         const t = await getJson<{ ok: boolean; cards: MemoCard[] }>('/nio-memo/api/trash')
         setTrash(t.cards ?? [])
       }
@@ -890,6 +890,8 @@ export function HandnoteTabView(props: ConvViewProps & {
   const cstmMemos = data.memos.filter((c) => c.origin === 'custom')
   // 角色功能关闭 ⇒ 角色 tab 隐藏、角色页不参与渲染（数据仍在，重开即回来）
   const subEff: 'rules' | 'roles' | 'memo' | 'settings' = (sub === 'roles' && !sw.roleEnabled) ? 'rules' : sub
+  // T7：经验卡不生效时「经验卡」子页签整块隐藏 ⇒ 若此刻正停在它上面，回落到「创建」（不空屏）
+  const paneEff: 'create' | 'tags' | 'trash' | 'exp' | 'advanced' = (pane === 'exp' && !sw.expEffective) ? 'create' : pane
 
   return (
     <div className="nm2-panel">{toast ? <div className="nm2-toast">{toast}</div> : null}
@@ -984,18 +986,21 @@ export function HandnoteTabView(props: ConvViewProps & {
         ) : (
           <>
             <div className="nm2-tabs" style={{ marginBottom: 4 }}>
-              <button className={pane === 'create' ? 'on' : ''} onClick={() => setPane('create')}>创建</button>
-              <button className={pane === 'tags' ? 'on' : ''} onClick={() => setPane('tags')}>标签</button>
-              {sw.roleEnabled ? (
-                <button className={pane === 'exp' ? 'on' : ''} onClick={() => setPane('exp')}>
-                  经验卡{exps.length ? `（${exps.length}）` : ''}{sw.expEffective ? '' : ' · 已停用'}
+              <button className={paneEff === 'create' ? 'on' : ''} onClick={() => setPane('create')}>创建</button>
+              <button className={paneEff === 'tags' ? 'on' : ''} onClick={() => setPane('tags')}>标签</button>
+              {/* T7：经验卡不生效（角色关「连带」或经验卡开关关）时，**本子页签整体隐藏**
+                  —— 用户口径：关掉就该消失，而不是留一个「· 已停用」的入口。
+                  数据不受影响（卡片与绑定都还在），重新开启即恢复。 */}
+              {sw.expEffective ? (
+                <button className={paneEff === 'exp' ? 'on' : ''} onClick={() => setPane('exp')}>
+                  经验卡{exps.length ? `（${exps.length}）` : ''}
                 </button>
               ) : null}
-              <button className={pane === 'advanced' ? 'on' : ''} onClick={() => setPane('advanced')}>高级</button>
-              <button className={pane === 'trash' ? 'on' : ''} onClick={() => { setPane('trash'); void load() }}>回收站{data.trashCount ? `（${data.trashCount}）` : ''}</button>
+              <button className={paneEff === 'advanced' ? 'on' : ''} onClick={() => setPane('advanced')}>高级</button>
+              <button className={paneEff === 'trash' ? 'on' : ''} onClick={() => { setPane('trash'); void load() }}>回收站{data.trashCount ? `（${data.trashCount}）` : ''}</button>
             </div>
 
-            {pane === 'create' ? (
+            {paneEff === 'create' ? (
               <>
                 <div className="nm2-help">
                   手写一张 <b>自定义</b> 卡。先在上面选<b>要创建的类型</b>：备忘 / 规矩 / 角色 / 经验卡——
@@ -1039,7 +1044,7 @@ export function HandnoteTabView(props: ConvViewProps & {
                   </div>
                 </div>
               </>
-            ) : pane === 'exp' ? (
+            ) : paneEff === 'exp' ? (
               <>
                 <div className="nm2-help">
                   <b>经验卡</b>：<b>不进每轮注入</b>，也没有独立 tab。它的索引只挂在<b>角色的经验槽</b>里 ——
@@ -1064,7 +1069,7 @@ export function HandnoteTabView(props: ConvViewProps & {
                   onMenu={(c, el) => openMenu(c, el)}
                   onLevel={(c, el) => openLevelMenu('card', c.id, c.permLevels, c.permCurrentLevelId, el)} />
               </>
-            ) : pane === 'advanced' ? (
+            ) : paneEff === 'advanced' ? (
               <>
                 <div className="nm2-help">
                   <b>高级</b>：本页<b>只放功能开关</b>。关闭不会删除任何数据 —— 卡片、绑定、设定全部保留，重新打开即恢复。
@@ -1092,7 +1097,7 @@ export function HandnoteTabView(props: ConvViewProps & {
                   </div>
                 </div>
               </>
-            ) : pane === 'trash' ? (
+            ) : paneEff === 'trash' ? (
               <>
                 <div className="nm2-help">
                   <b>回收站</b>：删除的卡片暂放这里，可<b>恢复</b>到原区，或<b>彻底清除</b>（不可恢复）。回收站内不可编辑。
