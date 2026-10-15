@@ -20,6 +20,8 @@
  * 全局部署：所有路由与 session/cwd 无关。所有失败都带可读 error，不静默。
  */
 import type { DatabaseSync } from "node:sqlite";
+import * as nodeFs from "node:fs";
+import * as nodePath from "node:path";
 
 import {
   listCards, listIron, listTags, listTrash, setCardEnabled, setCardState,
@@ -29,6 +31,7 @@ import {
   setPermEnabled, setPermCurrentLevel, addPermLevel, updatePermLevel, deletePermLevel, permOwnerOfLevel, getPermState, getCardById, listIron,
 } from "./db";
 import type { CardState } from "./types";
+import { memoDbFile } from "./types";
 
 export interface ApiDeps {
   /** 取全局库句柄（懒打开；抛错即显式失败） */
@@ -76,7 +79,25 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
       }
       try {
         const isPost = req.method === "POST";
-        const body = async () => JSON.parse((await readBody(req)) || "{}");
+        /**
+         * 写操作审计（2026-10-15）：任何一次改动都落一行 JSONL，便于事后与「缓存整段失效」对账。
+         * 背景：卡片改动在会话日志里**没有任何事件**，导致此前的归因只能靠猜（实测改动后 10~20 秒即出现整段全灭）。
+         * 开关：设 NIO_MEMO_WRITE_LOG=off 可关闭；默认写在库文件同目录的 writes.jsonl。
+         */
+        const auditWrite = (path: string, payload: unknown) => {
+          try {
+            if ((process.env.NIO_MEMO_WRITE_LOG ?? "").trim() === "off") return;
+            const file = process.env.NIO_MEMO_WRITE_LOG?.trim()
+              || nodePath.join(nodePath.dirname(memoDbFile()), "writes.jsonl");
+            const line = JSON.stringify({ ts: new Date().toISOString(), path, payload });
+            nodeFs.appendFileSync(file, line + "\n");
+          } catch { /* 审计失败绝不影响主流程 */ }
+        };
+        const body = async () => {
+          const parsed = JSON.parse((await readBody(req)) || "{}");
+          auditWrite(urlPath, parsed);   // 只记尝试；成功与否由响应体体现
+          return parsed;
+        };
 
         if (req.method === "GET" && urlPath.endsWith("/api/all")) {
           // 不带层级标签（核心/本机/DSH）——本项目已脱离旧记忆卡片分层体系

@@ -2,7 +2,7 @@
  * dsh-nio-memo — 全局「手记」插件（宿主端入口）
  *
  * 极简三件：
- *   ① systemPrompt.section：每轮注入 铁条例全文 + 启用中的动态规矩全文 + 启用中的备忘索引清单
+ *   ① systemPrompt.context（尾部动态快照）：每轮注入 铁条例全文 + 启用中的动态规矩全文 + 启用中的备忘索引清单
  *   ② 工具 nio_memo(path)：按逻辑路径取卡全文（停用卡显式拒绝）
  *   ③ Web API `/nio-memo/*`：手记 Tab 的数据面（只读 + 启停/升降三个写操作）
  *
@@ -29,20 +29,31 @@ export function apply(ctx: Context): void {
   };
 
   // ① 每轮注入（全局，不绑项目）
-  ctx.systemPrompt.section({
-    name: "nio-memo",
-    order: 122,
-    text: () => {
-      try {
-        return buildInjectText(getDb());
-      } catch (e) {
-        // 禁静默兜底：注入失败必须显式进入提示词，而不是悄悄没有
-        const msg = String((e as Error)?.message || e).slice(0, 200);
-        console.error(`[dsh-nio-memo] 注入失败：${msg}（库：${memoDbFile()}）`);
-        return `\n⚠️ 手记注入失败（显式告警 · 非静默兜底）：${msg}\n（库文件：${memoDbFile()}）\n`;
-      }
-    },
-  });
+  //
+  // ⚠️ 注入口径（2026-10-15 改，缓存放首位）：
+  //   默认走 **systemPrompt.context（尾部动态快照）**——DSH 把它附在「保留历史之后」，
+  //   所以改一张卡片只会让尾部这一小段失效，**不会重写稳定的系统提示词缓存前缀**；
+  //   快照内容不变时 DSH 什么都不加（`project()` 里逐字比较），旧快照会被替换、不累积。
+  //   旧实现走 systemPrompt.section＝系统提示词最前面（约 2K token 处）：改一次卡片＝
+  //   从该点往后全部失效＝**整个会话上下文全价重算一次**（实测每次约 25~30 万 token）。
+  //   逃生门：环境变量 NIO_MEMO_INJECT=section 可退回旧口径（对比/回滚用）。
+  const injectText = (): string => {
+    try {
+      return buildInjectText(getDb());
+    } catch (e) {
+      // 禁静默兜底：注入失败必须显式进入提示词，而不是悄悄没有
+      const msg = String((e as Error)?.message || e).slice(0, 200);
+      console.error(`[dsh-nio-memo] 注入失败：${msg}（库：${memoDbFile()}）`);
+      return `\n⚠️ 手记注入失败（显式告警 · 非静默兜底）：${msg}\n（库文件：${memoDbFile()}）\n`;
+    }
+  };
+  if ((process.env.NIO_MEMO_INJECT ?? "").trim() === "section") {
+    // 旧口径：系统提示词最前面（缓存不友好，仅供对比/回滚）
+    ctx.systemPrompt.section({ name: "nio-memo", order: 122, text: injectText });
+  } else {
+    // 新口径：尾部动态快照（跟在保留历史之后）
+    ctx.systemPrompt.context({ name: "nio-memo", order: 125, text: injectText });
+  }
 
   // ② 卡片读取工具
   ctx.tools.register(defineTool({
