@@ -637,7 +637,7 @@ export function HandnoteTabView(props: ConvViewProps & {
   /** 某标签下的卡片：系统标签（默认/自定义）按 origin 过滤，其余按打标过滤。
    *  T4：角色 / 经验卡同样可打标，故一并纳入（批量「转区」只对备忘↔规矩生效）。 */
   const tagCards = (tag: Tag): MemoCard[] => {
-    const all = [...data.memos, ...data.rules, ...(data.roles ?? []), ...(data.exps ?? [])]
+    const all = [...(data?.memos ?? []), ...(data?.rules ?? []), ...(data?.roles ?? []), ...(data?.exps ?? [])]
     if (tag.system) {
       const origin: Origin = tag.name === '默认' ? 'default' : 'custom'
       return all.filter((c) => c.origin === origin)
@@ -647,9 +647,12 @@ export function HandnoteTabView(props: ConvViewProps & {
 
   // T4：开关 + 角色/经验卡派生列表（老数据/测试数据可能没带 switches ⇒ 兜底为默认开）
   // ⚠ 必须定义在 head / 内页之前：内页「经验槽」与 tab 显隐都要用
-  const sw: Switches = data.switches ?? DEFAULT_SWITCHES
-  const roles = data.roles ?? []
-  const exps = data.exps ?? []
+  // ⚠⚠ **首帧 data 可能是 null**（真实路径要等 fetch 回来，本文件后面才做 null 守卫）——
+  //     这里一律用 `data?.`；否则首帧就抛 TypeError → React 整树崩 → **整个 Tab 白屏**。
+  //     （SSR 测试一直传 __testData，这个坑曾一路绿；已补「不传数据」的回归断言。）
+  const sw: Switches = data?.switches ?? DEFAULT_SWITCHES
+  const roles = data?.roles ?? []
+  const exps = data?.exps ?? []
   const defRoles = roles.filter((c) => c.origin === 'default')
   const cstmRoles = roles.filter((c) => c.origin === 'custom')
   const defExps = exps.filter((c) => c.origin === 'default')

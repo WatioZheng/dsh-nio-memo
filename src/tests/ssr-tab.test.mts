@@ -73,6 +73,13 @@ const htmlRoleDetail = render({
 });
 const htmlRoleOff = render({ __testData: dataRoleOff, __testSub: "roles" });
 const htmlExpOff = render({ __testData: dataRoleOff, __testSub: "settings", __testPane: "exp" });
+// ⚠ 回归：**首帧 data 为 null**（真实路径要等 fetch 回来）——曾经这里抛 TypeError 导致整个 Tab 白屏，
+//    而当时所有 SSR 断言都传了 __testData，所以一路绿。这条就是补那个盲区。
+const htmlNoData = render({});
+// ⚠ 回归：老数据没有 switches/roles/exps 字段（升级后第一次打开）⇒ 必须兜底为默认、不得抛错
+const legacyData: any = { ok: true, iron: data.iron, rules: data.rules, memos: data.memos, tags: data.tags, trashCount: 0 };
+const htmlLegacy = render({ __testData: legacyData, __testSub: "settings", __testPane: "advanced" });
+const htmlLegacyRoles = render({ __testData: legacyData, __testSub: "rules" });
 
 const checks: Array<[string, boolean]> = [
   ["顶部标题", html.includes("手记")],
@@ -104,6 +111,10 @@ const checks: Array<[string, boolean]> = [
   ["T4 经验槽对已删经验卡显示空引用", htmlRoleDetail.includes("空引用")],
   ["T4 经验槽有可绑定挑选区", htmlRoleDetail.includes("可绑定的经验卡")],
   ["T4 角色内页不出现「升/降」按钮", !htmlRoleDetail.includes("立为规矩") && !htmlRoleDetail.includes("降为备忘")],
+  // ── 回归：白屏 / 老数据 两条盲区 ──
+  ["首帧无数据不白屏（data=null 守卫）", htmlNoData.includes("加载中")],
+  ["老数据无 switches 字段 ⇒ 兜底默认（不抛错）", htmlLegacy.includes("角色功能") && htmlLegacy.includes("经验卡")],
+  ["老数据无 roles/exps ⇒ 规矩页正常渲染", htmlLegacyRoles.includes("手记卡片维护") && !htmlLegacyRoles.includes("主理角色")],
 ];
 let bad = 0;
 for (const [k, v] of checks) { console.log(`${v ? "✓" : "✗"} ${k}`); if (!v) bad++; }
