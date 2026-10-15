@@ -35,6 +35,10 @@ try {
   html = renderToString(React.createElement(HandnoteTabView as any, { __testData: data, __testSub: "rules" }));
   html += renderToString(React.createElement(HandnoteTabView as any, { __testData: data, __testSub: "memo" }));
   html += renderToString(React.createElement(HandnoteTabView as any, { __testData: data, __testSub: "settings" }));
+  // 轻提示（切档后「下一轮生效」）必须在面板里渲染出来（曾经用 position:fixed 会被祖先定位带偏 ⇒ 看不见）
+  html += renderToString(React.createElement(HandnoteTabView as any, {
+    __testData: data, __testSub: "memo", __testToast: "已切到「禁止」 · 下一轮生效（agent 本轮看不到）",
+  }));
 } catch (e) {
   console.error("✗ 渲染抛错（会表现为白屏）：", (e as Error)?.message);
   console.error((e as Error)?.stack?.split("\n").slice(0, 5).join("\n"));
@@ -49,6 +53,7 @@ const checks: Array<[string, boolean]> = [
   ["备忘卡", html.includes("DSH重启方式")],
   ["档位按钮（开权限卡显示当前档位名）", html.includes("禁止")],
   ["停用态卡片", html.includes("已停用")],
+  ["切档轻提示可渲染", html.includes("nm2-toast") && html.includes("下一轮生效")],
 ];
 let bad = 0;
 for (const [k, v] of checks) { console.log(`${v ? "✓" : "✗"} ${k}`); if (!v) bad++; }

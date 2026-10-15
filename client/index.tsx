@@ -127,7 +127,7 @@ const css = `
 .nm2-foot-acts{display:flex;gap:4px;flex-shrink:0}
 .nm2-btn.small{height:20px;padding:0 8px;font-size:10.5px}
 /* 「更多」悬浮菜单（多行选项） */
-.nm2-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:26px;z-index:70;max-width:min(560px,86vw);background:rgba(24,24,27,.94);color:#fff;font-size:12px;line-height:1.6;padding:9px 15px;border-radius:9px;box-shadow:0 8px 28px rgba(0,0,0,.3);text-align:center;pointer-events:none}
+.nm2-toast{order:99;flex:0 0 auto;background:rgba(24,24,27,.94);color:#fff;font-size:12px;line-height:1.6;padding:8px 14px;border-radius:9px;margin-top:2px;box-shadow:0 6px 20px rgba(0,0,0,.22);text-align:center;border:1px solid rgba(255,255,255,.12)}
 .nm2-tip{background:rgba(234,88,12,.13);border:1px solid rgba(234,88,12,.35);border-left-width:3px;border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.7;color:var(--dsw-alias-label-primary,#3f4149)}
 .nm2-permsec{display:flex;flex-direction:column;gap:8px;margin-top:8px;padding-top:10px;border-top:1px dashed var(--dsw-alias-border-subtle,rgba(128,128,128,.35))}
 .nm2-menu-mask{position:fixed;inset:0;z-index:9998;background:transparent}
@@ -440,7 +440,7 @@ export function PermBoard({ kind, id, permEnabled, levels, currentLevelId, curre
   )
 }
 
-export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; __testSub?: 'rules' | 'memo' | 'settings' }) {
+export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; __testSub?: 'rules' | 'memo' | 'settings'; __testToast?: string }) {
   const [data, setData] = useState<AllData | null>(props.__testData ?? null)
   const [err, setErr] = useState('')
   const [sub, setSub] = useState<'rules' | 'memo' | 'settings'>(props.__testSub ?? 'rules')
@@ -526,7 +526,7 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
   }
 
   /** 轻提示（toast）：切档等"下一轮才生效"的动作，用一条小提示讲清生效时机 */
-  const [toast, setToast] = useState<string>('')
+  const [toast, setToast] = useState<string>(props.__testToast ?? '')   // __testToast 仅测试用
   const flash = useCallback((msg: string) => {
     setToast(msg)
     window.setTimeout(() => setToast((cur) => (cur === msg ? '' : cur)), 4200)
@@ -599,8 +599,8 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
     </div>
   )
 
-  if (err) return <div className="nm2-panel">{head}<div className="nm2-main"><div className="nm2-err">手记读取失败：{err}</div></div></div>
-  if (!data) return <div className="nm2-panel">{head}<div className="nm2-main"><div className="nm2-empty">加载中…</div></div></div>
+  if (err) return <div className="nm2-panel">{toast ? <div className="nm2-toast">{toast}</div> : null}{head}<div className="nm2-main"><div className="nm2-err">手记读取失败：{err}</div></div></div>
+  if (!data) return <div className="nm2-panel">{toast ? <div className="nm2-toast">{toast}</div> : null}{head}<div className="nm2-main"><div className="nm2-empty">加载中…</div></div></div>
 
   const tagPicker = (selected: number[], onToggle: (id: number) => void) => (
     <div className="nm2-modal-body">
@@ -618,8 +618,7 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
   // ── 内页 ──
   if (detail) {
     return (
-      <div className="nm2-panel">
-        {toast ? <div className="nm2-toast">{toast}</div> : null}
+      <div className="nm2-panel">{toast ? <div className="nm2-toast">{toast}</div> : null}
         {head}
         <div className="nm2-main">
           <button className="nm2-back" onClick={() => { setDetail(null); setEditing(false); setNote('') }}>← 返回</button>
@@ -751,7 +750,7 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
   const cstmMemos = data.memos.filter((c) => c.origin === 'custom')
 
   return (
-    <div className="nm2-panel">
+    <div className="nm2-panel">{toast ? <div className="nm2-toast">{toast}</div> : null}
       {head}
       <div className="nm2-main">
         {note ? <div className={note.startsWith('✗') ? 'nm2-err' : 'nm2-help'}>{note}</div> : null}
