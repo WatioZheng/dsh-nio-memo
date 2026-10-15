@@ -104,6 +104,8 @@ const css = `
    - max-width 990px ≈ 5×(190+8)：宽屏下**最多 5 列**（沿用用户口径），再宽也不硬拉 */
 .nm2-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));max-width:990px}
 .nm2-card{border:1px solid var(--dsw-alias-border-subtle,rgba(128,128,128,.22));background:var(--dsw-alias-bg-secondary,transparent);border-radius:10px;padding:10px 12px;font-size:12px;display:flex;flex-direction:column;gap:6px;box-sizing:border-box;cursor:pointer;transition:border-color .12s ease,box-shadow .12s ease,transform .12s ease;flex:0 0 auto;height:112px;overflow:hidden}
+/* T5：内底行的卡需要更高盒子（112 塞不下「内容 3 行 + 日期行 + 按钮行」） */
+.nm2-card.with-acts{height:148px}
 .nm2-card:hover{border-color:var(--dsw-alias-state-business-primary,#2563eb);box-shadow:0 3px 12px rgba(0,0,0,.10);transform:translateY(-1px)}
 .nm2-card.off{opacity:.55}
 .nm2-card.dflt{border-left:3px solid rgba(37,99,235,.45)}
@@ -120,9 +122,12 @@ const css = `
 .nm2-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:2px}
 /* 内页/设置/标签详情里的按钮行：不贴底、不推挤后面的内容 */
 .nm2-detail-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-/* 卡片外容器：盒子只放内容，底部信息/按钮在盒子之外 */
+/* 卡片外容器：盒子内已含底部信息行（T5 起），容器仅负责网格定位 */
 .nm2-entry{display:flex;flex-direction:column;gap:4px;min-width:0;height:100%}
-.nm2-entry-foot{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:0 2px;min-width:0}
+/* 卡内底部行（T5）：日期 + 按钮，**纵向堆叠**（与原先卡外排布同款，只是收进盒内）
+   为何不并排：最窄列 190px 时可用仅 162px，而「3 按钮 125px + 完整日期 60px」= 191px ⇒ 日期必被省略号截断（实测缺口 29px）。
+   纵排则任何宽度都不截断、按钮不被压扁；卡高 112→148 与原先「卡 112 + 卡外 36」的总占用持平，不额外占版面。 */
+.nm2-card-actions{display:flex;flex-direction:column;align-items:flex-start;gap:3px;margin-top:auto;padding-top:5px;border-top:1px dashed var(--dsw-alias-border-subtle,rgba(128,128,128,.28));min-width:0;box-sizing:border-box}
 .nm2-meta{font-size:10px;line-height:1.3;color:var(--dsw-alias-label-tertiary,#8b8d98);font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nm2-foot-acts{display:flex;gap:4px;flex-shrink:0}
 .nm2-btn.small{height:20px;padding:0 8px;font-size:10.5px}
@@ -295,8 +300,8 @@ function Card({ card, onOpen, onToggle, onMenu, onLevel, busy }: {
   const isRule = card.state === 'rule'
   return (
     <div className="nm2-entry">
-      {/* 卡片盒子：只放内容（标题独占整行，标签在盒内底部） */}
-      <div className={`nm2-card ${card.origin === 'default' ? 'dflt' : 'cstm'}${card.enabled ? '' : ' off'}`} onClick={onOpen}>
+      {/* 卡片盒子：内容 + **卡内底部**（日期 / 按钮）—— T5 起不再外挂盒子外 */}
+      <div className={`nm2-card with-acts ${card.origin === 'default' ? 'dflt' : 'cstm'}${card.enabled ? '' : ' off'}`} onClick={onOpen}>
         <div className="nm2-card-name one-line">{card.name}</div>
         <div className="nm2-kw">
           {card.keywords.length ? card.keywords.map((w) => <span key={w}>{w}</span>) : <span>（无关键词）</span>}
@@ -307,22 +312,22 @@ function Card({ card, onOpen, onToggle, onMenu, onLevel, busy }: {
           {card.enabled ? null : <span className="nm2-tag">已停用</span>}
           {card.tags.map((t) => <span key={t.id} className="nm2-tag user">{t.name}</span>)}
         </div>
-      </div>
-      {/* 盒子外底部：极小字的版本号 + 修改时间，以及按钮 */}
-      <div className="nm2-entry-foot">
-        <span className="nm2-meta" title={`修改于 ${fmtTime(card.updatedAt)}`}>{fmtDate(card.updatedAt)}</span>
-        <span className="nm2-foot-acts">
-          <button className="nm2-btn small" disabled={busy} onClick={onToggle}>{card.enabled ? '停用' : '启用'}</button>
-          {card.permEnabled && card.permCurrentLevelId ? (
+        {/* 卡内底部：极小字修改日期 + 操作按钮（改到卡内后**必须** stopPropagation，否则点按钮会连带打开详情） */}
+        <div className="nm2-card-actions">
+          <span className="nm2-meta" title={`修改于 ${fmtTime(card.updatedAt)}`}>{fmtDate(card.updatedAt)}</span>
+          <span className="nm2-foot-acts">
+            <button className="nm2-btn small" disabled={busy} onClick={(e) => { e.stopPropagation(); onToggle() }}>{card.enabled ? '停用' : '启用'}</button>
+            {card.permEnabled && card.permCurrentLevelId ? (
+              <button className="nm2-btn small" disabled={busy}
+                style={{ color: colorHex(card.permLevels.find((l) => l.id === card.permCurrentLevelId)?.color ?? 'gray') }}
+                onClick={(e) => { e.stopPropagation(); onLevel(e.currentTarget) }}>
+                {card.permCurrentLevelName}
+              </button>
+            ) : null}
             <button className="nm2-btn small" disabled={busy}
-              style={{ color: colorHex(card.permLevels.find((l) => l.id === card.permCurrentLevelId)?.color ?? 'gray') }}
-              onClick={(e) => { e.stopPropagation(); onLevel(e.currentTarget) }}>
-              {card.permCurrentLevelName}
-            </button>
-          ) : null}
-          <button className="nm2-btn small" disabled={busy}
-            onClick={(e) => { e.stopPropagation(); onMenu(e.currentTarget) }}>更多</button>
-        </span>
+              onClick={(e) => { e.stopPropagation(); onMenu(e.currentTarget) }}>更多</button>
+          </span>
+        </div>
       </div>
     </div>
   )
@@ -765,26 +770,27 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
             <div className="nm2-grid">
               {data.iron.map((c) => (
                 <div className="nm2-entry" key={`i${c.id}`}>
-                  {/* 盒子：只放内容 */}
-                  <div className={`nm2-card ${c.origin === 'default' ? 'dflt' : 'cstm'}`} onClick={() => openDetail({ kind: 'iron', item: c })}>
+                  {/* 盒子：内容 + **卡内底部**（档位按钮）—— T5 起搬进卡内 */}
+                  <div className={`nm2-card with-acts ${c.origin === 'default' ? 'dflt' : 'cstm'}`} onClick={() => openDetail({ kind: 'iron', item: c })}>
                     <div className="nm2-card-name one-line">{c.title}</div>
                     <div className="nm2-card-foot">
                       <OriginTag origin={c.origin} />
                       <span className="nm2-tag lock">锁死</span>
                     </div>
+                    {/* 铁律卡无 updated_at、且不可停用 ⇒ 内底行只有档位按钮（无档位时不渲染该行） */}
+                    {c.permEnabled && c.permCurrentLevelId ? (
+                      <div className="nm2-card-actions">
+                        <span className="nm2-meta">档位</span>
+                        <span className="nm2-foot-acts">
+                          <button className="nm2-btn small" disabled={busy}
+                            style={{ color: colorHex(c.permLevels.find((l) => l.id === c.permCurrentLevelId)?.color ?? 'gray') }}
+                            onClick={(e) => { e.stopPropagation(); openLevelMenu('iron', c.id, c.permLevels, c.permCurrentLevelId, e.currentTarget) }}>
+                            {c.permCurrentLevelName}
+                          </button>
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
-                  {/* 盒子外底部：档位按钮（与「DSH重启方式」等卡片同一位置口径） */}
-                  {c.permEnabled && c.permCurrentLevelId ? (
-                    <div className="nm2-entry-foot">
-                      <span className="nm2-foot-acts">
-                        <button className="nm2-btn small" disabled={busy}
-                          style={{ color: colorHex(c.permLevels.find((l) => l.id === c.permCurrentLevelId)?.color ?? 'gray') }}
-                          onClick={(e) => { e.stopPropagation(); openLevelMenu('iron', c.id, c.permLevels, c.permCurrentLevelId, e.currentTarget) }}>
-                          {c.permCurrentLevelName}
-                        </button>
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
               ))}
             </div>

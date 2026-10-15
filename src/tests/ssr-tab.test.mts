@@ -54,6 +54,11 @@ const checks: Array<[string, boolean]> = [
   ["档位按钮（开权限卡显示当前档位名）", html.includes("禁止")],
   ["停用态卡片", html.includes("已停用")],
   ["切档轻提示可渲染", html.includes("nm2-toast") && html.includes("下一轮生效")],
+  // T5：日期 + 操作按钮必须**在卡片内部底部**，且卡外底行彻底退役
+  ["卡内底行已渲染（卡片/铁律各一次）", (html.match(/nm2-card-actions/g) ?? []).length >= 4],
+  ["卡外底行已退役（无 nm2-entry-foot）", !html.includes("nm2-entry-foot")],
+  ["底行确为卡片末子元素（在卡内底部）", /nm2-card-actions[\s\S]{0,900}?<\/div><\/div>/.test(html)],
+  ["卡盒升到 with-acts 高度档", html.includes("nm2-card with-acts")],
 ];
 let bad = 0;
 for (const [k, v] of checks) { console.log(`${v ? "✓" : "✗"} ${k}`); if (!v) bad++; }
