@@ -126,6 +126,7 @@ const css = `
 .nm2-foot-acts{display:flex;gap:4px;flex-shrink:0}
 .nm2-btn.small{height:20px;padding:0 8px;font-size:10.5px}
 /* 「更多」悬浮菜单（多行选项） */
+.nm2-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:26px;z-index:70;max-width:min(560px,86vw);background:rgba(24,24,27,.94);color:#fff;font-size:12px;line-height:1.6;padding:9px 15px;border-radius:9px;box-shadow:0 8px 28px rgba(0,0,0,.3);text-align:center;pointer-events:none}
 .nm2-tip{background:rgba(234,88,12,.13);border:1px solid rgba(234,88,12,.35);border-left-width:3px;border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.7;color:var(--dsw-alias-label-primary,#3f4149)}
 .nm2-permsec{display:flex;flex-direction:column;gap:8px;margin-top:8px;padding-top:10px;border-top:1px dashed var(--dsw-alias-border-subtle,rgba(128,128,128,.35))}
 .nm2-menu-mask{position:fixed;inset:0;z-index:9998;background:transparent}
@@ -355,12 +356,14 @@ function CardGroup({ cards, title, hint, busy, onOpen, onToggle, onMenu, onLevel
   )
 }
 
-export function PermBoard({ kind, id, permEnabled, levels, currentLevelId, currentLevelName, lockedNote, busy, act, onOpenLevelMenu, __testExpanded }: {
+export function PermBoard({ kind, id, permEnabled, levels, currentLevelId, currentLevelName, lockedNote, busy, act, onOpenLevelMenu, onFlash, __testExpanded }: {
   kind: 'card' | 'iron'; id: number
   permEnabled: boolean; levels: PermLevel[]; currentLevelId: number | null; currentLevelName: string
   lockedNote?: string; busy: boolean
   act: (path: string, body: unknown, okMsg?: string) => Promise<any>
   onOpenLevelMenu: (el: HTMLElement) => void
+  /** 轻提示回调（切档后说明生效时机） */
+  onFlash?: (msg: string) => void
   /** 仅测试用：强制展开（生产不传 → 默认收起） */
   __testExpanded?: boolean
 }): React.ReactNode {
@@ -399,7 +402,8 @@ export function PermBoard({ kind, id, permEnabled, levels, currentLevelId, curre
                     onChange={(e) => setDraft({ ...draft, [l.id]: { ...d(l), name: e.target.value } })} />
                   {l.id === currentLevelId ? <span className="nm2-tag rule">当前档位</span> : (
                     <button className="nm2-btn primary" disabled={busy}
-                      onClick={() => void act('/nio-memo/api/perm/current', { kind, id, levelId: l.id }, `档位已切到「${l.name}」`)}>设为当前</button>
+                      onClick={() => void act('/nio-memo/api/perm/current', { kind, id, levelId: l.id })
+                      .then((r) => { if (r) onFlash?.(`已切到「${l.name}」 · 下一轮生效（agent 本轮看不到）`) })}>设为当前</button>
                   )}
                   <button className="nm2-btn" disabled={busy}
                     onClick={() => void act('/nio-memo/api/perm/level/update', { levelId: l.id, name: d(l).name, content: d(l).content, color: d(l).color }, '档位已保存')}>保存档位</button>
@@ -520,6 +524,13 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
     setMenu({ type: 'card', card, x, y })
   }
 
+  /** 轻提示（toast）：切档等"下一轮才生效"的动作，用一条小提示讲清生效时机 */
+  const [toast, setToast] = useState<string>('')
+  const flash = useCallback((msg: string) => {
+    setToast(msg)
+    window.setTimeout(() => setToast((cur) => (cur === msg ? '' : cur)), 4200)
+  }, [])
+
   /** 档位菜单：以实体为单位（卡片/铁条例通用） */
   const openLevelMenu = (kind: 'card' | 'iron', id: number, levels: PermLevel[], currentId: number | null, el: HTMLElement) => {
     const r = el.getBoundingClientRect()
@@ -607,6 +618,7 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
   if (detail) {
     return (
       <div className="nm2-panel">
+        {toast ? <div className="nm2-toast">{toast}</div> : null}
         {head}
         <div className="nm2-main">
           <button className="nm2-back" onClick={() => { setDetail(null); setEditing(false); setNote('') }}>← 返回</button>
@@ -625,7 +637,7 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
                 permEnabled={detail.item.permEnabled} levels={detail.item.permLevels}
                 currentLevelId={detail.item.permCurrentLevelId} currentLevelName={detail.item.permCurrentLevelName}
                 lockedNote="（铁律正文锁死，档位可编辑）"
-                busy={busy} act={act}
+                busy={busy} act={act} onFlash={flash}
                 onOpenLevelMenu={(el) => openLevelMenu('iron', detail.item.id, detail.item.permLevels, detail.item.permCurrentLevelId, el)} />
             </>
           ) : detail.kind === 'card' ? (
@@ -711,7 +723,7 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
                     kind="card" id={detail.item.id}
                     permEnabled={detail.item.permEnabled} levels={detail.item.permLevels}
                     currentLevelId={detail.item.permCurrentLevelId} currentLevelName={detail.item.permCurrentLevelName}
-                    busy={busy} act={act}
+                    busy={busy} act={act} onFlash={flash}
                     onOpenLevelMenu={(el) => openLevelMenu('card', detail.item.id, detail.item.permLevels, detail.item.permCurrentLevelId, el)} />
                 </>
               )}
@@ -752,19 +764,25 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
             <div className="nm2-sec">铁律（锁死 · 每轮无条件全文注入）<small>{data.iron.length} 条</small></div>
             <div className="nm2-grid">
               {data.iron.map((c) => (
-                <div className={`nm2-card ${c.origin === 'default' ? 'dflt' : 'cstm'}`} key={`i${c.id}`} onClick={() => openDetail({ kind: 'iron', item: c })}>
-                  <div className="nm2-card-name one-line">{c.title}</div>
-                  <div className="nm2-card-foot">
-                    <OriginTag origin={c.origin} />
-                    <span className="nm2-tag lock">锁死</span>
+                <div className="nm2-entry" key={`i${c.id}`}>
+                  {/* 盒子：只放内容 */}
+                  <div className={`nm2-card ${c.origin === 'default' ? 'dflt' : 'cstm'}`} onClick={() => openDetail({ kind: 'iron', item: c })}>
+                    <div className="nm2-card-name one-line">{c.title}</div>
+                    <div className="nm2-card-foot">
+                      <OriginTag origin={c.origin} />
+                      <span className="nm2-tag lock">锁死</span>
+                    </div>
                   </div>
+                  {/* 盒子外底部：档位按钮（与「DSH重启方式」等卡片同一位置口径） */}
                   {c.permEnabled && c.permCurrentLevelId ? (
-                    <div className="nm2-acts">
-                      <button className="nm2-btn small" disabled={busy}
-                        style={{ color: colorHex(c.permLevels.find((l) => l.id === c.permCurrentLevelId)?.color ?? 'gray') }}
-                        onClick={(e) => { e.stopPropagation(); openLevelMenu('iron', c.id, c.permLevels, c.permCurrentLevelId, e.currentTarget) }}>
-                        {c.permCurrentLevelName}
-                      </button>
+                    <div className="nm2-entry-foot">
+                      <span className="nm2-foot-acts">
+                        <button className="nm2-btn small" disabled={busy}
+                          style={{ color: colorHex(c.permLevels.find((l) => l.id === c.permCurrentLevelId)?.color ?? 'gray') }}
+                          onClick={(e) => { e.stopPropagation(); openLevelMenu('iron', c.id, c.permLevels, c.permCurrentLevelId, e.currentTarget) }}>
+                          {c.permCurrentLevelName}
+                        </button>
+                      </span>
                     </div>
                   ) : null}
                 </div>
@@ -947,7 +965,12 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
               </>
             ) : (
               menu.levels.map((l) => (
-                <button key={l.id} onClick={() => { const m = menu; setMenu(null); void act('/nio-memo/api/perm/current', { kind: m.kind, id: m.id, levelId: l.id }, `档位已切到「${l.name}」`) }}>
+                <button key={l.id} onClick={() => {
+                  const m = menu; setMenu(null)
+                  void act('/nio-memo/api/perm/current', { kind: m.kind, id: m.id, levelId: l.id }).then((r) => {
+                    if (r) flash(`已切到「${l.name}」 · 下一轮生效（agent 本轮看不到）`)
+                  })
+                }}>
                   {l.id === menu.currentId ? '✓ ' : ''}<Dot color={l.color} /> {l.name}
                 </button>
               ))

@@ -291,6 +291,13 @@ export function listIron(db: DatabaseSync): IronClause[] {
 
 /** 分组内排序：默认在前 → 启用在前 → 更新时间倒序（停用的自然沉到下面） */
 const ORDER_SQL = `ORDER BY CASE origin WHEN 'default' THEN 0 ELSE 1 END, enabled DESC, updated_at DESC, id`;
+/**
+ * 注入专用排序：**稳定键**（不含 updated_at）。
+ * 为什么单列一套（2026-10-15）：注入文本是系统提示词前缀的一部分，排序键若含 updated_at，
+ * 则"编辑一张卡、甚至只点一下『更新』(touch 只改时间)"都会让整段索引重排 ⇒ 后续 token 全部变化
+ * ⇒ 前缀缓存从该行起无谓失效。界面排序仍按最近改动（符合直觉），注入走稳定键。
+ */
+const INJECT_ORDER_SQL = `ORDER BY CASE origin WHEN 'default' THEN 0 ELSE 1 END, enabled DESC, id`;
 
 export interface ListOpts { deleted?: boolean }
 
@@ -301,6 +308,13 @@ export function listCards(db: DatabaseSync, state?: CardState, opts: ListOpts = 
   if (!opts.deleted) where.push("deleted_at IS NULL");
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const rows = db.prepare(`SELECT * FROM cards ${whereSql} ${ORDER_SQL}`).all(...args) as any[];
+  const tm = tagMap(db);
+  return rows.map((r) => toCard(db, r, tm.get(Number(r.id)) ?? []));
+}
+
+/** 注入专用：启用中的卡片按**稳定键**排序（编辑/更新时间不影响顺序） */
+export function listCardsForInject(db: DatabaseSync): MemoCard[] {
+  const rows = db.prepare(`SELECT * FROM cards WHERE deleted_at IS NULL ${INJECT_ORDER_SQL}`).all() as any[];
   const tm = tagMap(db);
   return rows.map((r) => toCard(db, r, tm.get(Number(r.id)) ?? []));
 }

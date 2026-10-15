@@ -11,13 +11,13 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 
-import { listCards, listIron, readIndexNote, permForInject } from "./db";
+import { listCardsForInject, listIron, readIndexNote, permForInject } from "./db";
 
 export const INJECT_TAG = "nio-memo";
 
 export function buildInjectText(db: DatabaseSync): string {
   const iron = listIron(db);
-  const cards = listCards(db);
+  const cards = listCardsForInject(db);   // 稳定排序：避免编辑/更新时间造成注入文本重排
   const rules = cards.filter((c) => c.state === "rule" && c.enabled);
   const memos = cards.filter((c) => c.state === "memo" && c.enabled);
   const offCount = cards.filter((c) => !c.enabled).length;

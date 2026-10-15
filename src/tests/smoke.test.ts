@@ -18,7 +18,7 @@ import {
   setCardsState, setCardsEnabled, deleteCards,
   listPermissions, setPermissionLevel, setPermissionEnabled, addPermissionLevel,
   updatePermissionLevel, deletePermissionLevel, deletePermission, restorePermission,
-  touchCard,
+  touchCard, updateCard,
   setPermEnabled, setPermCurrentLevel, addPermLevel, updatePermLevel, deletePermLevel, getPermState,
 } from "../db";
 import { parseMd, blocksToText } from "../../client/md";
@@ -269,6 +269,19 @@ ok("updateCard 真的写 origin（防止静默忽略字段）", () => {
   assert.equal(d.origin, "default", "传了 origin 就必须落库");
   assert.equal(listCards(db).find((x) => x.id === c.id)!.origin, "default", "库里也应已变更");
   purgeCard(db, c.id);
+});
+
+ok("注入排序稳定：编辑/更新时间不改变注入顺序（界面排序仍按改动时间）", () => {
+  const mk = (n: string) => createCard(db, { name: n, keywords: ["注入序"], content: "x" });
+  const a = mk("注入序测试A"), b = mk("注入序测试B"), c = mk("注入序测试C");
+  const order1 = buildInjectText(db).split("\n").filter((l) => l.includes("注入序测试")).map((l) => l.trim().slice(0, 12));
+  touchCard(db, a.id);              // 只改时间（相当于点「更新」）
+  updateCard(db, b.id, { content: "改过了" });  // 改内容也会动 updated_at
+  const order2 = buildInjectText(db).split("\n").filter((l) => l.includes("注入序测试")).map((l) => l.trim().slice(0, 12));
+  assert.deepEqual(order2, order1, "注入顺序必须与更新时间无关");
+  const uiOrder = listCards(db).filter((x) => x.name.startsWith("注入序测试")).map((x) => x.name);
+  assert.ok(uiOrder.length === 3);
+  for (const x of [a, b, c]) purgeCard(db, x.id);
 });
 
 console.log("Markdown 解析");
