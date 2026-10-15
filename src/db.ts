@@ -354,6 +354,8 @@ export interface CardDraft {
   tagIds?: number[];
   /** 版本号（整数）；不传则新建为 1、编辑自动 +1 */
   version?: number;
+  /** 来源：default=默认（官方集）/ custom=自定义；不传则保持原值 */
+  origin?: CardOrigin;
 }
 
 /** 编辑时的版本号：显式给就用给的，否则旧版本 +1 */
@@ -404,8 +406,9 @@ export function updateCard(db: DatabaseSync, id: number, patch: Partial<CardDraf
     throw new Error(`路径已被占用：${p}`);
   }
   const ver = lazyPatchVersion(patch as any, cur.version);
+  const origin: CardOrigin = patch.origin === undefined ? cur.origin : asOrigin(patch.origin);
   db.prepare(
-    `UPDATE cards SET name = ?, keywords = ?, path = ?, content = ?, version = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE cards SET name = ?, keywords = ?, path = ?, content = ?, version = ?, updated_at = ?, origin = ? WHERE id = ?`,
   ).run(
     name,
     JSON.stringify(patch.keywords === undefined ? cur.keywords : patch.keywords),
@@ -413,6 +416,7 @@ export function updateCard(db: DatabaseSync, id: number, patch: Partial<CardDraf
     patch.content === undefined ? cur.content : String(patch.content),
     ver,
     new Date().toISOString(),
+    origin,
     id,
   );
   if (patch.tagIds !== undefined) setCardTags(db, id, patch.tagIds);

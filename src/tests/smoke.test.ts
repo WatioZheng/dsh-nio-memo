@@ -262,6 +262,15 @@ ok("档位校验：不属于该实体的档位 / 未知实体 一律显式报错
   purgeCard(db, a.id); purgeCard(db, b.id);
 });
 
+ok("updateCard 真的写 origin（防止静默忽略字段）", () => {
+  const c = createCard(db, { name: "来源改写测试卡", keywords: [], content: "x" });
+  assert.equal(c.origin, "custom");
+  const d = updateCard(db, c.id, { origin: "default", name: "来源改写测试卡" });
+  assert.equal(d.origin, "default", "传了 origin 就必须落库");
+  assert.equal(listCards(db).find((x) => x.id === c.id)!.origin, "default", "库里也应已变更");
+  purgeCard(db, c.id);
+});
+
 console.log("Markdown 解析");
 ok("标题/列表/引用/表格/代码块/分隔线全支持", () => {
   const md = "# 标题\n\n段落文字\n\n- a\n- b\n\n> 引用\n\n| 列1 | 列2 |\n|---|---|\n| x | y |\n\n```js\ncode\n```\n\n---\n";

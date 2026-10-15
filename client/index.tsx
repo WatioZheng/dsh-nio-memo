@@ -126,6 +126,7 @@ const css = `
 .nm2-foot-acts{display:flex;gap:4px;flex-shrink:0}
 .nm2-btn.small{height:20px;padding:0 8px;font-size:10.5px}
 /* 「更多」悬浮菜单（多行选项） */
+.nm2-tip{background:rgba(234,88,12,.13);border:1px solid rgba(234,88,12,.35);border-left-width:3px;border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.7;color:var(--dsw-alias-label-primary,#3f4149)}
 .nm2-permsec{display:flex;flex-direction:column;gap:8px;margin-top:8px;padding-top:10px;border-top:1px dashed var(--dsw-alias-border-subtle,rgba(128,128,128,.35))}
 .nm2-menu-mask{position:fixed;inset:0;z-index:9998;background:transparent}
 .nm2-menu{position:fixed;z-index:9999;min-width:132px;background:var(--dsw-alias-bg-base,#fff);border:1px solid var(--dsw-alias-border-subtle,rgba(128,128,128,.28));border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:4px;display:flex;flex-direction:column;gap:2px}
@@ -811,7 +812,10 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
             {pane === 'create' ? (
               <>
                 <div className="nm2-help">
-                  手写一张 <b>自定义</b> 卡（落「备忘」区，之后可「立为规矩」）。💡 <b>交给 agent 创建往往更方便有效</b>——你说一句「记住这个」，它会把关键词、正文格式与标签一次写到位。
+                  手写一张 <b>自定义</b> 卡（落「备忘」区，之后可「立为规矩」）。
+                </div>
+                <div className="nm2-tip">
+                  💡 <b>交给 agent 创建往往更方便有效</b>——你说一句「记住这个」，它会把关键词、正文格式与标签一次写到位。
                 </div>
                 <div className="nm2-form">
                   <div className="nm2-label">标题（唯一，路径按它生成）</div>
