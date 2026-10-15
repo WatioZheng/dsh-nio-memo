@@ -483,6 +483,20 @@ ok("T4 彻底清除 ⇒ 绑定残留一并清理", () => {
   assert.equal(listRoleExps(db, t4role.id).some((x) => x.id === t4expB.id), false);
 });
 
+// ── 20. T9/F13：keywords 坏数据必须显式告警（此前静默返回 []） ──
+ok("F13 坏 keywords：不抛错、按空处理、且显式 warn", () => {
+  const c = createCard(db, { name: "坏关键词卡T9", keywords: [], content: "x" });
+  db.prepare(`UPDATE cards SET keywords = ? WHERE id = ?`).run("{不是 JSON", c.id);
+  const warns: string[] = [];
+  const orig = console.warn;
+  console.warn = (...a: unknown[]) => { warns.push(a.map(String).join(" ")); };
+  let back: ReturnType<typeof getCardById> = null;
+  try { back = getCardById(db, c.id); } finally { console.warn = orig; }
+  assert.deepEqual(back!.keywords, []);
+  assert.ok(warns.some((w) => w.includes("keywords")), "坏数据必须显式告警（禁静默兜底）");
+  purgeCard(db, c.id);
+});
+
 // 清理 T4 样本
 for (const id of [t4role.id, t4role2.id, t4expA.id]) purgeCard(db, id);
 

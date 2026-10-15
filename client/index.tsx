@@ -74,6 +74,8 @@ interface RoleExpRef { id: number; name: string; path: string; enabled: boolean;
 interface MemoCard extends PermBits {
   id: number; name: string; keywords: string[]; path: string
   state: CardState; enabled: boolean; origin: Origin; content: string
+  /** F12（T9）：列表接口不下发正文时置 true ⇒ 内页打开时用 /api/card 按需取全文 */
+  contentOmitted?: boolean
   deletedAt: string | null; tags: CardTag[]; updatedAt?: string; version?: number
 }
 interface AllData {
@@ -323,7 +325,6 @@ function Card({ card, onOpen, onToggle, onMenu, onLevel, busy }: {
   card: MemoCard; onOpen: () => void; onToggle: () => void
   onMenu: (el: HTMLElement) => void; onLevel: (el: HTMLElement) => void; busy: boolean
 }) {
-  const isRule = card.state === 'rule'
   return (
     <div className="nm2-entry">
       {/* 卡片盒子：内容 + **卡内底部**（日期 / 按钮）—— T5 起不再外挂盒子外 */}
@@ -345,7 +346,7 @@ function Card({ card, onOpen, onToggle, onMenu, onLevel, busy }: {
           <span className="nm2-meta" title={`修改于 ${fmtTime(card.updatedAt)}`}>{fmtDate(card.updatedAt)}</span>
           <span className="nm2-foot-acts">
             <button className="nm2-btn small" disabled={busy} onClick={(e) => { e.stopPropagation(); onToggle() }}>{card.enabled ? '停用' : '启用'}</button>
-            {card.permEnabled && card.permCurrentLevelId ? (
+            {card.permEnabled && !isIndexOnly(card.state) && card.permCurrentLevelId ? (
               <button className="nm2-btn small" disabled={busy}
                 style={{ color: colorHex(card.permLevels.find((l) => l.id === card.permCurrentLevelId)?.color ?? 'gray') }}
                 onClick={(e) => { e.stopPropagation(); onLevel(e.currentTarget) }}>
@@ -493,6 +494,8 @@ export function HandnoteTabView(props: ConvViewProps & {
   const [trash, setTrash] = useState<MemoCard[]>([])
   /** T4：当前打开的角色卡的「经验槽」（null=非角色/未加载） */
   const [slot, setSlot] = useState<RoleExpRef[] | null>(props.__testSlot ?? null)
+  /** F2（T9）：经验槽读取失败的原因——非空时显式告警，且**不再**显示「尚未绑定」这种假信息 */
+  const [slotErr, setSlotErr] = useState('')
   const [tagModal, setTagModal] = useState<{ card: MemoCard; selected: number[] } | null>(null)
   const [tagDraft, setTagDraft] = useState({ name: '', renameId: 0, renameName: '' })
   /** 悬浮菜单单例（父级持有 → 不可能同时开两个）；坐标按屏幕空间现算 */
@@ -553,19 +556,39 @@ export function HandnoteTabView(props: ConvViewProps & {
     } finally { setBusy(false) }
   }, [load])
 
+  /**
+   * F12（T9）：列表接口只下发轻字段，正文按需取。
+   * 打开内页时若 contentOmitted=true，用 /api/card 取全文；失败**显式报错**，不假装是空卡。
+   */
+  const loadFullCard = async (id: number) => {
+    try {
+      const r = await getJson<{ ok: boolean; card?: MemoCard; error?: string }>(`/nio-memo/api/card?id=${id}`)
+      if (!r.ok || !r.card) { setNote(`✗ ${r.error || '读取卡片正文失败'}`); return }
+      const full = r.card
+      setDetail((prev) => (prev && prev.kind === 'card' && prev.item.id === id ? { kind: 'card', item: full } : prev))
+    } catch (e) {
+      setNote(`✗ 读取卡片正文失败：${String((e as Error)?.message || e)}`)
+    }
+  }
+
   const openDetail = (d: Detail) => {
-    setDetail(d); setEditing(false); setNote(''); setMenu(null)
+    setDetail(d); setEditing(false); setNote(''); setMenu(null); setSlotErr('')
+    if (d.kind === 'card' && d.item.contentOmitted) void loadFullCard(d.item.id)
     // T4：打开角色卡 ⇒ 加载其经验槽（非角色卡则清空）
     if (d.kind === 'card' && d.item.state === 'role') void loadSlot(d.item.id)
     else setSlot(null)
   }
 
-  /** T4：读某角色的经验槽 */
+  /** T4：读某角色的经验槽（F2：失败显式告警，不再静默显示「尚未绑定」） */
   const loadSlot = async (roleId: number) => {
+    setSlotErr('')
     try {
       const r = await getJson<{ ok: boolean; exps?: RoleExpRef[]; error?: string }>(`/nio-memo/api/role/exps?roleId=${roleId}`)
+      if (!r.ok) { setSlot([]); setSlotErr(r.error || '经验槽读取失败'); return }
       setSlot(r.exps ?? [])
-    } catch { setSlot([]) }
+    } catch (e) {
+      setSlot([]); setSlotErr(String((e as Error)?.message || e))
+    }
   }
 
   /** T4：替换式写某角色的经验槽 */
@@ -619,6 +642,12 @@ export function HandnoteTabView(props: ConvViewProps & {
     }
   }, [menu])
   const startEdit = (c: MemoCard) => {
+    // F12（T9）：正文尚未按需取回时**不进编辑**——否则会拿空正文覆盖原卡
+    if (c.contentOmitted) {
+      void loadFullCard(c.id)
+      setNote('正文加载中…稍候再点「编辑」')
+      return
+    }
     setDraft({ name: c.name, keywords: c.keywords.join('、'), tagIds: c.tags.map((t) => t.id), content: c.content, version: c.version })
     setEditing(true); setNote('')
   }
@@ -810,7 +839,18 @@ export function HandnoteTabView(props: ConvViewProps & {
                     <button className="nm2-btn danger" disabled={busy}
                       onClick={async () => { const c = await act('/nio-memo/api/delete', { id: detail.item.id }, '已移入回收站'); if (c) setDetail(null) }}>删除</button>
                   </div>
-                  {renderMd(detail.item.content)}
+                  {detail.item.contentOmitted
+                    ? <div className="nm2-help">正文加载中…</div>
+                    : renderMd(detail.item.content)}
+                  {/* F5（T9）：经验卡在功能未生效时给显式说明（数据没丢，只是不会被带出） */}
+                  {detail.item.state === 'exp' && !sw.expEffective ? (
+                    <div className="nm2-permsec">
+                      <div className="nm2-tip">
+                        ⚠ 经验卡功能当前<b>未生效</b>（{sw.roleEnabled ? '经验卡开关已关' : '角色功能已关'}）⇒ 本卡<b>仍在库中、数据不丢</b>，
+                        但不会被任何角色带出。在「设置 → 高级」里重新打开即恢复。
+                      </div>
+                    </div>
+                  ) : null}
                   {detail.item.state === 'role' ? (
                     <div className="nm2-permsec">
                       <div className="nm2-sec">经验槽<small>绑定经验卡（T4）· 仅索引随角色被读取时触发</small></div>
@@ -821,10 +861,13 @@ export function HandnoteTabView(props: ConvViewProps & {
                         </div>
                       ) : (
                         <>
+                          {slotErr ? (
+                            <div className="nm2-err">✗ 经验槽读取失败：{slotErr}（下面的清单可能不完整，请重开本页再试）</div>
+                          ) : null}
                           <div className="nm2-help">
                             绑定后：agent 读取本角色时，会一并带出这些经验卡的<b>索引行</b>（正文需再按路径读一次）。一张经验卡可被<b>多个角色</b>绑定。
                           </div>
-                          {(slot ?? []).length === 0 ? <div className="nm2-empty">尚未绑定任何经验卡。</div> : (
+                          {slotErr ? null : (slot ?? []).length === 0 ? <div className="nm2-empty">尚未绑定任何经验卡。</div> : (
                             <div className="nm2-grid">
                               {(slot ?? []).map((e) => {
                                 const live = exps.find((x) => x.id === e.id)
@@ -858,12 +901,15 @@ export function HandnoteTabView(props: ConvViewProps & {
                       )}
                     </div>
                   ) : null}
-                  <PermBoard
-                    kind="card" id={detail.item.id}
-                    permEnabled={detail.item.permEnabled} levels={detail.item.permLevels}
-                    currentLevelId={detail.item.permCurrentLevelId} currentLevelName={detail.item.permCurrentLevelName}
-                    busy={busy} act={act} onFlash={flash}
-                    onOpenLevelMenu={(el) => openLevelMenu('card', detail.item.id, detail.item.permLevels, detail.item.permCurrentLevelId, el)} />
+                  {/* F1（T9）：角色 / 经验卡是索引型实体，按 T4 已批准边界**不挂权限板块** */}
+                  {!isIndexOnly(detail.item.state) ? (
+                    <PermBoard
+                      kind="card" id={detail.item.id}
+                      permEnabled={detail.item.permEnabled} levels={detail.item.permLevels}
+                      currentLevelId={detail.item.permCurrentLevelId} currentLevelName={detail.item.permCurrentLevelName}
+                      busy={busy} act={act} onFlash={flash}
+                      onOpenLevelMenu={(el) => openLevelMenu('card', detail.item.id, detail.item.permLevels, detail.item.permCurrentLevelId, el)} />
+                  ) : null}
                 </>
               )}
             </>
@@ -1254,6 +1300,13 @@ function TagDetail({ tag, cards, busy, onBatch, onOpen }: {
       <div className="nm2-help">
         下面列出该标签下的卡片（当前 {cards.length} 张：点卡片可看内页）。批量操作只作用于这些卡片。
       </div>
+      {/* F10（T9）：索引型（角色 / 经验卡）不参与「转区」，这里说清哪些操作会跳过它们 */}
+      {cards.some((c) => isIndexOnly(c.state)) ? (
+        <div className="nm2-help">
+          其中 <b>{cards.filter((c) => isIndexOnly(c.state)).length}</b> 张是角色 / 经验卡：<b>「批量转为动态规矩 / 备忘」对它们不生效</b>（索引型不参与互迁，会被跳过）；
+          「批量启用 / 停用 / 删除」照常生效。
+        </div>
+      ) : null}
       <div className="nm2-detail-acts">
         <button className="nm2-btn" disabled={busy} onClick={() => void onBatch('state', 'rule')}>批量转为动态规矩</button>
         <button className="nm2-btn" disabled={busy} onClick={() => void onBatch('state', 'memo')}>批量转为备忘</button>

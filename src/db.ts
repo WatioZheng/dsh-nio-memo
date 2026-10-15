@@ -235,8 +235,14 @@ export function readIndexNote(db: DatabaseSync): { text: string; fallback: boole
 function parseKeywords(raw: unknown): string[] {
   try {
     const a = JSON.parse(String(raw ?? "[]"));
-    return Array.isArray(a) ? a.map(String) : [];
-  } catch {
+    if (!Array.isArray(a)) {
+      // F13（T9）：坏数据不再静默返回空——显式告警，便于定位是哪张卡写坏了
+      console.warn(`[nio-memo] keywords 不是数组，已按空处理：${String(raw).slice(0, 120)}`);
+      return [];
+    }
+    return a.map(String);
+  } catch (e) {
+    console.warn(`[nio-memo] keywords JSON 解析失败，已按空处理：${String(raw).slice(0, 120)}（${String((e as Error)?.message || e)}）`);
     return [];
   }
 }
@@ -634,6 +640,20 @@ function ownerExists(db: DatabaseSync, kind: PermOwnerKind, ownerId: number): bo
   return !!db.prepare(`SELECT id FROM ${kind === "card" ? "cards" : "iron_clauses"} WHERE id = ?`).get(ownerId);
 }
 
+/**
+ * F1（T9）：角色 / 经验卡是**索引型实体**，按 T4 已批准边界**不挂权限板块**。
+ * 所有写入口都从这里二次设防（API 层另有一道给可读文案的检查）——越界一律显式报错。
+ */
+function assertPermOwnerAllowed(db: DatabaseSync, kind: PermOwnerKind, ownerId: number): void {
+  if (kind !== "card") return;
+  const row = db.prepare(`SELECT name, state FROM cards WHERE id = ?`).get(ownerId) as any;
+  if (!row) return;   // 不存在的情况交给 ownerExists 报「未找到」，此处不抢错误
+  const st = String(row.state);
+  if (st === "role" || st === "exp") {
+    throw new Error(`「${String(row.name)}」是${st === "role" ? "角色" : "经验卡"}（索引型实体），不支持权限板块`);
+  }
+}
+
 export function listPermLevels(db: DatabaseSync, kind: PermOwnerKind, ownerId: number): PermLevel[] {
   const rows = db.prepare(
     `SELECT * FROM perm_levels WHERE owner_kind = ? AND owner_id = ? ORDER BY pos, id`,
@@ -664,6 +684,7 @@ function refreshPerm(db: DatabaseSync, kind: PermOwnerKind, ownerId: number): Pe
 /** 开关权限板块；开启时若一个档位都没有，自动建「禁止 / 允许」并选中第一个 */
 export function setPermEnabled(db: DatabaseSync, kind: PermOwnerKind, ownerId: number, enabled: boolean): PermState {
   if (!ownerExists(db, kind, ownerId)) throw new Error(`未找到${kind === "card" ? "卡片" : "铁条例"} id=${ownerId}`);
+  assertPermOwnerAllowed(db, kind, ownerId);
   const tbl = kind === "card" ? "cards" : "iron_clauses";
   if (enabled && listPermLevels(db, kind, ownerId).length === 0) {
     addPermLevel(db, kind, ownerId, DEFAULT_LEVELS[0].name, DEFAULT_LEVELS[0].content, DEFAULT_LEVELS[0].color);
@@ -680,6 +701,7 @@ export function setPermEnabled(db: DatabaseSync, kind: PermOwnerKind, ownerId: n
 
 export function setPermCurrentLevel(db: DatabaseSync, kind: PermOwnerKind, ownerId: number, levelId: number): PermState {
   if (!ownerExists(db, kind, ownerId)) throw new Error(`未找到${kind === "card" ? "卡片" : "铁条例"} id=${ownerId}`);
+  assertPermOwnerAllowed(db, kind, ownerId);
   if (!listPermLevels(db, kind, ownerId).some((l) => l.id === levelId)) throw new Error(`档位 ${levelId} 不属于该实体`);
   const tbl = kind === "card" ? "cards" : "iron_clauses";
   db.prepare(`UPDATE ${tbl} SET perm_current = ?${kind === "card" ? ", updated_at = ?" : ""} WHERE id = ?`)
@@ -689,6 +711,7 @@ export function setPermCurrentLevel(db: DatabaseSync, kind: PermOwnerKind, owner
 
 export function addPermLevel(db: DatabaseSync, kind: PermOwnerKind, ownerId: number, name: string, content = "", color = "gray"): PermState {
   if (!ownerExists(db, kind, ownerId)) throw new Error(`未找到${kind === "card" ? "卡片" : "铁条例"} id=${ownerId}`);
+  assertPermOwnerAllowed(db, kind, ownerId);
   const n = String(name ?? "").trim();
   if (!n) throw new Error("档位名不能为空");
   const pos = Number((db.prepare(

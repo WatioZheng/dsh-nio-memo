@@ -1,7 +1,8 @@
 /**
  * api.ts — Web 数据面（host 侧），挂 `/nio-memo` 前缀。
  *
- *   GET  /api/all            → { iron, rules, roles, exps, memos, tags, trashCount, switches }
+ *   GET  /api/all            → { iron, rules, roles, exps, memos, tags, trashCount, switches }（列表类卡正文置空，见 /api/card）
+ *   GET  /api/card?id=       → { card }（单卡全文，内页按需取）
  *   GET  /api/trash          → { cards }（回收站）
  *   POST /api/create         { name, keywords, content, tagIds?, state? }（state: memo|rule|role|exp，默认 memo）
  *   POST /api/update         { id, name?, keywords?, content?, tagIds? }
@@ -33,7 +34,8 @@ import {
   touchCard, getSwitches, setSwitch, listRoleExps, setRoleExps, listRolesOfExp,
   setPermEnabled, setPermCurrentLevel, addPermLevel, updatePermLevel, deletePermLevel, permOwnerOfLevel, getPermState, getCardById, listIron,
 } from "./db";
-import type { CardState } from "./types";
+import type { CardState, MemoCard } from "./types";
+import { isIndexOnlyState, STATE_LABEL } from "./types";
 import { memoDbFile } from "./types";
 
 const STATES: CardState[] = ["memo", "rule", "role", "exp"];
@@ -110,22 +112,46 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
           return parsed;
         };
 
+        /** 查询参数取**正整数**：缺失 / 非数字 / 0 / 负数一律 null，由调用方显式报错（不吃 Number(null)=0 的暗坑） */
+        const intParam = (q: URLSearchParams, key: string): number | null => {
+          const raw = q.get(key);
+          if (raw === null || raw.trim() === "") return null;
+          const n = Number(raw);
+          return Number.isInteger(n) && n > 0 ? n : null;
+        };
+
         if (req.method === "GET" && urlPath.endsWith("/api/all")) {
           // 不带层级标签（核心/本机/DSH）——本项目已脱离旧记忆卡片分层体系
           const cards = listCards(db);
+          /**
+           * F12（T9）：列表只下发轻字段（名 / 关键词 / 路径 / 状态 / 标签…），**正文一律置空**。
+           * 内页打开时再用 GET /api/card?id= 按需取全文——避免每次刷新都全量搬运整库正文。
+           */
+          const slimCard = (c: MemoCard): MemoCard => ({ ...c, content: "", contentOmitted: true });
           json(res, 200, {
             ok: true,
             iron: listIron(db).map(({ group, permEnabled, permLevels, permCurrentLevelId, permCurrentLevelName, ...rest }) => ({
               ...rest, permEnabled, permLevels, permCurrentLevelId, permCurrentLevelName,
             })),
-            rules: cards.filter((c) => c.state === "rule"),
-            roles: cards.filter((c) => c.state === "role"),
-            exps: cards.filter((c) => c.state === "exp"),
-            memos: cards.filter((c) => c.state === "memo"),
+            rules: cards.filter((c) => c.state === "rule").map(slimCard),
+            roles: cards.filter((c) => c.state === "role").map(slimCard),
+            exps: cards.filter((c) => c.state === "exp").map(slimCard),
+            memos: cards.filter((c) => c.state === "memo").map(slimCard),
             tags: listTags(db),
             trashCount: listTrash(db).length,
             switches: getSwitches(db),
           });
+          return;
+        }
+
+        // F12（T9）：单卡全文——内页按需取（回收站内的卡也取得到，供只读展示）
+        if (req.method === "GET" && urlPath.endsWith("/api/card")) {
+          const q = new URL(req.url ?? "", "http://localhost").searchParams;
+          const id = intParam(q, "id");
+          if (id === null) { json(res, 200, { ok: false, error: "缺少合法 id" }); return; }
+          const c = getCardById(db, id);
+          if (!c) { json(res, 200, { ok: false, error: `未找到卡片 id=${id}` }); return; }
+          json(res, 200, { ok: true, card: c });
           return;
         }
 
@@ -136,13 +162,30 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
 
         if (isPost && urlPath.endsWith("/api/create")) {
           const b = await body();
+          const state = normState(b?.state);
+          /**
+           * F4（T9）：功能关闭时**不可**建对应类型的卡——否则会造出界面里看不见的「幽灵卡」。
+           * 与 /api/switch 同口径：显式拒绝并给可读原因（禁静默兜底）。
+           */
+          const swc = getSwitches(db);
+          if (state === "role" && !swc.roleEnabled) {
+            json(res, 200, { ok: false, error: "角色功能当前已关闭：请在「设置 → 高级」里先启用角色功能，再新建角色卡" });
+            return;
+          }
+          if (state === "exp" && !swc.expEffective) {
+            json(res, 200, {
+              ok: false,
+              error: `经验卡功能当前未生效（${swc.roleEnabled ? "经验卡开关已关" : "角色功能已关"}）：请在「设置 → 高级」里开启后再新建经验卡`,
+            });
+            return;
+          }
           const card = createCard(db, {
             name: String(b?.name ?? ""),
             keywords: normKeywords(b?.keywords),
             content: String(b?.content ?? ""),
             tagIds: normIds(b?.tagIds),
             version: b?.version === undefined || b?.version === "" ? undefined : Number(b.version),
-          }, normState(b?.state));
+          }, state);
           json(res, 200, { ok: true, card });
           return;
         }
@@ -271,8 +314,8 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
         if (urlPath.endsWith("/api/role/exps")) {
           if (req.method === "GET") {
             const q = new URL(req.url ?? "", "http://localhost").searchParams;
-            const roleId = Number(q.get("roleId"));
-            if (!Number.isInteger(roleId)) { json(res, 200, { ok: false, error: "缺少合法 roleId" }); return; }
+            const roleId = intParam(q, "roleId");
+            if (roleId === null) { json(res, 200, { ok: false, error: "缺少合法 roleId" }); return; }
             json(res, 200, { ok: true, exps: listRoleExps(db, roleId) });
             return;
           }
@@ -287,18 +330,36 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
         // ── T4：反查——该经验卡被哪些角色绑定 ──
         if (req.method === "GET" && urlPath.endsWith("/api/exp/roles")) {
           const q = new URL(req.url ?? "", "http://localhost").searchParams;
-          const id = Number(q.get("id"));
-          if (!Number.isInteger(id)) { json(res, 200, { ok: false, error: "缺少合法 id" }); return; }
+          const id = intParam(q, "id");
+          if (id === null) { json(res, 200, { ok: false, error: "缺少合法 id" }); return; }
           json(res, 200, { ok: true, roles: listRolesOfExp(db, id) });
           return;
         }
 
         // ── 权限板块（并入实体：卡片 / 铁条例 都有） ──
-        const permOwner = async () => {
+        /**
+         * F1（T9）：角色 / 经验卡**不挂权限板块**（T4 已批准边界）。
+         * 越界写入一律显式报错（禁静默兜底）——返回可读原因；允许时返回 null。
+         */
+        const permBlockedReason = (kind: "card" | "iron", id: number): string | null => {
+          if (kind !== "card") return null;
+          const c = getCardById(db, id);
+          if (!c) return `未找到卡片 id=${id}`;
+          if (isIndexOnlyState(c.state)) {
+            return `「${c.name}」是${STATE_LABEL[c.state]}（索引型实体），不支持权限板块`;
+          }
+          return null;
+        };
+
+        const permOwner = async (): Promise<
+          { b: any; kind: "card" | "iron"; id: number } | { err: string }
+        > => {
           const b = await body();
           const kind = b?.kind === "iron" ? "iron" : "card";
           const id = Number(b?.id);
-          if (!Number.isInteger(id)) return null;
+          if (!Number.isInteger(id)) return { err: "缺少合法 kind / id" };
+          const blocked = permBlockedReason(kind as "card" | "iron", id);
+          if (blocked) return { err: blocked };
           return { b, kind: kind as "card" | "iron", id };
         };
         const withOwner = (kind: "card" | "iron", id: number, perm: unknown) => ({
@@ -308,7 +369,7 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
 
         if (isPost && urlPath.endsWith("/api/perm/enable")) {
           const o = await permOwner();
-          if (!o) { json(res, 200, { ok: false, error: "缺少合法 kind / id" }); return; }
+          if ("err" in o) { json(res, 200, { ok: false, error: o.err }); return; }
           const st = setPermEnabled(db, o.kind, o.id, !!o.b?.enabled);
           json(res, 200, withOwner(o.kind, o.id, st));
           return;
@@ -316,7 +377,7 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
 
         if (isPost && urlPath.endsWith("/api/perm/current")) {
           const o = await permOwner();
-          if (!o) { json(res, 200, { ok: false, error: "缺少合法 kind / id" }); return; }
+          if ("err" in o) { json(res, 200, { ok: false, error: o.err }); return; }
           const levelId = Number(o.b?.levelId);
           if (!Number.isInteger(levelId)) { json(res, 200, { ok: false, error: "缺少合法 levelId" }); return; }
           const st = setPermCurrentLevel(db, o.kind, o.id, levelId);
@@ -326,7 +387,7 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
 
         if (isPost && urlPath.endsWith("/api/perm/level/add")) {
           const o = await permOwner();
-          if (!o) { json(res, 200, { ok: false, error: "缺少合法 kind / id" }); return; }
+          if ("err" in o) { json(res, 200, { ok: false, error: o.err }); return; }
           const st = addPermLevel(db, o.kind, o.id, String(o.b?.name ?? ""), String(o.b?.content ?? ""), String(o.b?.color ?? "gray"));
           json(res, 200, withOwner(o.kind, o.id, st));
           return;
@@ -336,6 +397,11 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
           const b = await body();
           const levelId = Number(b?.levelId);
           if (!Number.isInteger(levelId)) { json(res, 200, { ok: false, error: "缺少合法 levelId" }); return; }
+          const owner0 = permOwnerOfLevel(db, levelId);
+          if (owner0) {
+            const blocked = permBlockedReason(owner0.kind, owner0.ownerId);
+            if (blocked) { json(res, 200, { ok: false, error: blocked }); return; }
+          }
           const patch: { name?: string; content?: string; color?: string } = {};
           if (b?.name !== undefined) patch.name = String(b.name);
           if (b?.content !== undefined) patch.content = String(b.content);
@@ -351,6 +417,10 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
           const levelId = Number(b?.levelId);
           if (!Number.isInteger(levelId)) { json(res, 200, { ok: false, error: "缺少合法 levelId" }); return; }
           const owner0 = permOwnerOfLevel(db, levelId);
+          if (owner0) {
+            const blocked = permBlockedReason(owner0.kind, owner0.ownerId);
+            if (blocked) { json(res, 200, { ok: false, error: blocked }); return; }
+          }
           const st = deletePermLevel(db, levelId);
           json(res, 200, owner0 ? withOwner(owner0.kind, owner0.ownerId, st) : { ok: true, perm: st });
           return;

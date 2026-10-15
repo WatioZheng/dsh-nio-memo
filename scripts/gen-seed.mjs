@@ -13,12 +13,25 @@
  *
  * 用法：node scripts/gen-seed.mjs   （在插件根目录跑；只读真源、只写 src/seed.ts）
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const CARDS = '/path/to/workspace/.nio-memory/记忆卡片'
+/**
+ * 旧「记忆卡片」真源目录。
+ * ⚠️ 2026-10-15 起该体系已退役并 chattr +i 冻结（手记备忘「旧记忆卡片已退役」）：
+ *    本脚本只在**需要从旧真源重建 src/seed.ts** 时才用，日常不跑。
+ * F9（T9）：目录不在时**显式报错退出**（不再抛裸 ENOENT）；可用 NIO_MEMO_SEED_CARDS
+ *    指向解包后的归档目录（如从 记忆卡片.冻结前备份-*.tar.gz 解出的目录）。
+ */
+const CARDS = process.env.NIO_MEMO_SEED_CARDS?.trim() || '/path/to/workspace/.nio-memory/记忆卡片'
+if (!existsSync(CARDS)) {
+  console.error(`✗ 旧记忆卡片真源目录不存在：${CARDS}
+  该目录已退役（2026-10-15「旧记忆卡片已冻结」）；本脚本仅用于从旧真源重建 src/seed.ts。
+  若确有归档副本，请用 NIO_MEMO_SEED_CARDS=<解包目录> 重跑。`)
+  process.exit(1)
+}
 
 /** 从一段文本里切出 [startHeading, endHeading) 区间 */
 function section(text, startHeading, endHeading) {

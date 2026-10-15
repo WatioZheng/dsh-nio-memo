@@ -30,8 +30,9 @@
     "build": "node build-host.mjs && node build-client.mjs",
     "gen:seed": "node scripts/gen-seed.mjs",
     "test:smoke": "node --import tsx/esm src/tests/smoke.test.ts",
+    "test:api": "node --import tsx/esm src/tests/api.test.ts",
     "test:ssr": "node --import tsx/esm src/tests/ssr-perm.test.mts",
-    "test": "node --import tsx/esm src/tests/smoke.test.ts && node --import tsx/esm src/tests/ssr-perm.test.mts && node --import tsx/esm src/tests/ssr-tab.test.mts",
+    "test": "node --import tsx/esm src/tests/smoke.test.ts && node --import tsx/esm src/tests/api.test.ts && node --import tsx/esm src/tests/ssr-perm.test.mts && node --import tsx/esm src/tests/ssr-tab.test.mts",
     "test:ssr-tab": "node --import tsx/esm src/tests/ssr-tab.test.mts"
   },
   "peerDependencies": {

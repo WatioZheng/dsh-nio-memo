@@ -70,6 +70,8 @@ export interface MemoCard {
   enabled: boolean;
   origin: CardOrigin;
   content: string;
+  /** F12（T9）：列表接口（/api/all）**不下发正文**时置 true；内页需再用 /api/card 按需取全文 */
+  contentOmitted?: boolean;
   createdAt: string;
   updatedAt: string;
   /** 软删除时刻（非空＝在回收站里） */

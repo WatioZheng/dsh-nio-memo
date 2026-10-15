@@ -27,7 +27,7 @@ const data: any = {
   ok: true,
   iron: [{ id: 10, title: "手记卡片维护", path: "规矩/铁律/手记卡片维护.md", content: "# 正文", origin: "default", ...permBits(true, "禁止") }],
   rules: [
-    { id: 6, name: "禁止静默兜底", keywords: ["兜底"], path: "规矩/动态/禁止静默兜底.md", state: "rule", enabled: true, origin: "default", content: "x", deletedAt: null, tags: [], ...permBits(false, null) },
+    { id: 6, name: "禁止静默兜底", keywords: ["兜底"], path: "规矩/动态/禁止静默兜底.md", state: "rule", enabled: true, origin: "default", content: "x", deletedAt: null, tags: [{ id: 3, name: "通用", system: false }], ...permBits(false, null) },
   ],
   memos: [
     { id: 37, name: "DSH重启方式", keywords: ["重启"], path: "备忘/DSH重启方式.md", state: "memo", enabled: true, origin: "default", content: "y", deletedAt: null, tags: [], ...permBits(true, "禁止") },
@@ -35,7 +35,7 @@ const data: any = {
   ],
   // T4：角色 / 经验卡 + 三级开关
   roles: [
-    { id: 61, name: "主理角色", keywords: ["角色"], path: "角色/主理角色.md", state: "role", enabled: true, origin: "custom", content: "# 角色正文", deletedAt: null, tags: [], updatedAt: "2026-10-15T10:00:00.000Z", ...permBits(false, null) },
+    { id: 61, name: "主理角色", keywords: ["角色"], path: "角色/主理角色.md", state: "role", enabled: true, origin: "custom", content: "# 角色正文", deletedAt: null, tags: [{ id: 3, name: "通用", system: false }], updatedAt: "2026-10-15T10:00:00.000Z", ...permBits(false, null) },
   ],
   exps: [
     { id: 62, name: "经验甲", keywords: ["甲"], path: "经验/经验甲.md", state: "exp", enabled: true, origin: "custom", content: "经验正文", deletedAt: null, tags: [], ...permBits(false, null) },
@@ -80,6 +80,29 @@ const htmlRoleDetail = render({
 });
 const htmlRoleOff = render({ __testData: dataRoleOff, __testSub: "roles" });
 const htmlExpOff = render({ __testData: dataRoleOff, __testSub: "settings", __testPane: "exp" });
+// ── T9/F1：索引型实体内页**不挂权限板块**（角色 / 经验卡）；备忘卡作对照仍要挂 ──
+const htmlRoleDetailNoPerm = render({
+  __testData: data, __testSub: "roles",
+  __testDetail: { kind: "card", item: data.roles[0] },
+});
+const htmlExpDetail = render({
+  __testData: data, __testSub: "settings", __testPane: "exp",
+  __testDetail: { kind: "card", item: data.exps[0] },
+});
+// ── T9/F5：经验卡功能未生效 ⇒ 内页必须显式说明（不再静默） ──
+const htmlExpDetailOff = render({
+  __testData: dataRoleOff, __testSub: "settings", __testPane: "exp",
+  __testDetail: { kind: "card", item: dataRoleOff.exps[0] },
+});
+const htmlMemoDetail = render({
+  __testData: data, __testSub: "memo",
+  __testDetail: { kind: "card", item: data.memos[0] },
+});
+// ── T9/F10：标签详情（该标签下含索引型 ⇒ 必须写明「转区」会跳过它们） ──
+const htmlTagDetail = render({
+  __testData: data, __testSub: "settings", __testPane: "tags",
+  __testDetail: { kind: "tag", item: data.tags[1] },
+});
 // ⚠ 回归：**首帧 data 为 null**（真实路径要等 fetch 回来）——曾经这里抛 TypeError 导致整个 Tab 白屏，
 //    而当时所有 SSR 断言都传了 __testData，所以一路绿。这条就是补那个盲区。
 const htmlNoData = render({});
@@ -121,6 +144,18 @@ const checks: Array<[string, boolean]> = [
   ["T4 经验槽对已删经验卡显示空引用", htmlRoleDetail.includes("空引用")],
   ["T4 经验槽有可绑定挑选区", htmlRoleDetail.includes("可绑定的经验卡")],
   ["T4 角色内页不出现「升/降」按钮", !htmlRoleDetail.includes("立为规矩") && !htmlRoleDetail.includes("降为备忘")],
+  // ── T9/F1：权限板块不得挂到索引型实体上（对照：备忘卡仍挂） ──
+  ["T9/F1 角色内页不挂权限板块", !htmlRoleDetailNoPerm.includes("权限板块")],
+  ["T9/F1 经验卡内页不挂权限板块", !htmlExpDetail.includes("权限板块")],
+  ["T9/F1 对照：备忘卡内页仍挂权限板块", htmlMemoDetail.includes("权限板块")],
+  // ── T9/F5：经验卡未生效时内页显式说明 ──
+  ["T9/F5 经验卡未生效 ⇒ 内页显式说明", htmlExpDetailOff.includes("未生效") && htmlExpDetailOff.includes("数据不丢")],
+  ["T9/F5 经验卡生效时不出现该告警", !htmlExpDetail.includes("数据不丢")],
+  // ── T9/F10：标签页批量说明 ──
+  ["T9/F10 标签页写明索引型不参与转区", htmlTagDetail.includes("对它们不生效") && htmlTagDetail.includes("角色 / 经验卡")],
+  // ── T9/F2、F11：源码级断言（SSR 触发不到 fetch 失败；与 T6 同一取证手法） ──
+  ["T9/F2 经验槽失败有显式告警位（源码级）", /slotErr/.test(clientSrc) && /经验槽读取失败/.test(clientSrc)],
+  ["T9/F11 死变量 isRule 已删除（源码级）", !/const isRule\b/.test(clientSrc)],
   // ── 回归：白屏 / 老数据 两条盲区 ──
   ["首帧无数据不白屏（data=null 守卫）", htmlNoData.includes("加载中")],
   ["老数据无 switches 字段 ⇒ 兜底默认（不抛错）", htmlLegacy.includes("角色功能") && htmlLegacy.includes("经验卡")],
