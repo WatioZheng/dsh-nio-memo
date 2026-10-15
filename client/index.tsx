@@ -99,9 +99,10 @@ const css = `
 .nm2-sec{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#6b6f76);margin-top:4px;flex-shrink:0;display:flex;align-items:center;gap:6px}
 .nm2-sec small{font-weight:400;color:var(--dsw-alias-label-tertiary,#8b8d98);margin-left:6px}
 .nm2-sec i{width:8px;height:8px;border-radius:2px;display:inline-block}
-.nm2-grid{display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr))}
-@media(min-width:600px){.nm2-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(min-width:1024px){.nm2-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+/* 卡片网格：按**容器可用宽度**自适应（不再用 @media 认视口宽度）
+   - auto-fill + minmax(190px,1fr)：够宽就多放、变窄自动减列，卡片永不被压扁
+   - max-width 990px ≈ 5×(190+8)：宽屏下**最多 5 列**（沿用用户口径），再宽也不硬拉 */
+.nm2-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));max-width:990px}
 .nm2-card{border:1px solid var(--dsw-alias-border-subtle,rgba(128,128,128,.22));background:var(--dsw-alias-bg-secondary,transparent);border-radius:10px;padding:10px 12px;font-size:12px;display:flex;flex-direction:column;gap:6px;box-sizing:border-box;cursor:pointer;transition:border-color .12s ease,box-shadow .12s ease,transform .12s ease;flex:0 0 auto;height:112px;overflow:hidden}
 .nm2-card:hover{border-color:var(--dsw-alias-state-business-primary,#2563eb);box-shadow:0 3px 12px rgba(0,0,0,.10);transform:translateY(-1px)}
 .nm2-card.off{opacity:.55}
