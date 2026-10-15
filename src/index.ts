@@ -14,9 +14,9 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import type { DatabaseSync } from "node:sqlite";
 
 import { openMemoDb, getCardByPath } from "./db";
-import { buildInjectText } from "./inject";
+import { buildInjectText, buildRoleReadText } from "./inject";
 import { installApi } from "./api";
-import { memoDbFile } from "./types";
+import { memoDbFile, STATE_LABEL } from "./types";
 
 export const name = "dsh-nio-memo";
 export const inject = ["systemPrompt", "tools"];
@@ -59,8 +59,9 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: "nio_memo",
     description:
-      "读取「手记」卡片全文。传索引里给的逻辑路径（如 备忘/本机主机102.md）。" +
+      "读取「手记」卡片全文。传索引里给的逻辑路径（如 备忘/本机主机102.md、角色/主理.md）。" +
       "备忘卡命中关键词时用它取全文；铁律条例与动态规矩已每轮注入、一般无需调用。" +
+      "读**角色**时会一并带出其「经验槽」内经验卡的**索引行**（经验卡正文需再按路径读一次）。" +
       "停用卡片会被显式拒绝（不返回空内容）。",
     parameters: {
       path: { type: "string", description: "卡片逻辑路径（来自手记索引清单的「路径」字段）", },
@@ -85,7 +86,9 @@ export function apply(ctx: Context): void {
       if (!card.enabled) {
         return `该手记卡片已停用（不在注入索引中，故不返回内容）：「${card.name}」（路径 ${card.path}）。如确需，请在「手记」Tab 中启用。`;
       }
-      const zone = card.state === "rule" ? "动态规矩" : "备忘";
+      const zone = STATE_LABEL[card.state] ?? "备忘";
+      // 角色（T4）：正文 + **经验槽**（经验卡不参与每轮注入，只有读角色时才带出其索引行）
+      if (card.state === "role") return buildRoleReadText(getDb(), card, zone);
       return `# ${card.name}（${zone}）\n路径：${card.path}\n关键词：${card.keywords.join("、") || "（无）"}\n\n${card.content}`;
     },
   }));

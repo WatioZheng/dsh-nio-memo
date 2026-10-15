@@ -1,13 +1,13 @@
 /**
  * api.ts — Web 数据面（host 侧），挂 `/nio-memo` 前缀。
  *
- *   GET  /api/all            → { iron, rules, memos, tags, trashCount }
+ *   GET  /api/all            → { iron, rules, roles, exps, memos, tags, trashCount, switches }
  *   GET  /api/trash          → { cards }（回收站）
- *   POST /api/create         { name, keywords, content, tagIds? }
+ *   POST /api/create         { name, keywords, content, tagIds?, state? }（state: memo|rule|role|exp，默认 memo）
  *   POST /api/update         { id, name?, keywords?, content?, tagIds? }
  *   POST /api/copy           { id }
  *   POST /api/toggle         { id }            启/停
- *   POST /api/promote|demote { id }            立为规矩 / 降为备忘
+ *   POST /api/promote|demote { id }            立为规矩 / 降为备忘（角色/经验卡不可互迁，显式报错）
  *   POST /api/delete         { id }            软删除（进回收站）
  *   POST /api/restore        { id }            从回收站恢复
  *   POST /api/purge          { id }            彻底清除（不可恢复）
@@ -16,6 +16,9 @@
  *   POST /api/tags/rename    { id, name }
  *   POST /api/tags/delete    { id }
  *   POST /api/batch          { ids, op: state|enable|disable|delete, state? }
+ *   POST /api/switch         { key: role|exp, enabled }   开关（T4；角色关时经验卡不可启用）
+ *   POST /api/role/exps      { roleId, expIds }           角色经验槽（替换式）
+ *   GET  /api/exp/roles?id=  → { roles }                  反查：该经验卡被哪些角色绑定
  *
  * 全局部署：所有路由与 session/cwd 无关。所有失败都带可读 error，不静默。
  */
@@ -27,11 +30,19 @@ import {
   listCards, listIron, listTags, listTrash, setCardEnabled, setCardState,
   createCard, updateCard, copyCard, deleteCard, restoreCard, purgeCard,
   setCardTags, createTag, renameTag, deleteTag, setCardsState, setCardsEnabled, deleteCards,
-  touchCard,
+  touchCard, getSwitches, setSwitch, listRoleExps, setRoleExps, listRolesOfExp,
   setPermEnabled, setPermCurrentLevel, addPermLevel, updatePermLevel, deletePermLevel, permOwnerOfLevel, getPermState, getCardById, listIron,
 } from "./db";
 import type { CardState } from "./types";
 import { memoDbFile } from "./types";
+
+const STATES: CardState[] = ["memo", "rule", "role", "exp"];
+
+/** 入参 state 归一：非法值显式报错交给调用方处理（这里只做白名单收口） */
+function normState(raw: unknown, dflt: CardState = "memo"): CardState {
+  const s = String(raw ?? "").trim() as CardState;
+  return STATES.includes(s) ? s : dflt;
+}
 
 export interface ApiDeps {
   /** 取全局库句柄（懒打开；抛错即显式失败） */
@@ -108,9 +119,12 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
               ...rest, permEnabled, permLevels, permCurrentLevelId, permCurrentLevelName,
             })),
             rules: cards.filter((c) => c.state === "rule"),
+            roles: cards.filter((c) => c.state === "role"),
+            exps: cards.filter((c) => c.state === "exp"),
             memos: cards.filter((c) => c.state === "memo"),
             tags: listTags(db),
             trashCount: listTrash(db).length,
+            switches: getSwitches(db),
           });
           return;
         }
@@ -128,7 +142,7 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
             content: String(b?.content ?? ""),
             tagIds: normIds(b?.tagIds),
             version: b?.version === undefined || b?.version === "" ? undefined : Number(b.version),
-          });
+          }, normState(b?.state));
           json(res, 200, { ok: true, card });
           return;
         }
@@ -240,6 +254,42 @@ export function installApi(ctx: any, deps: ApiDeps): () => void {
           if (!Number.isInteger(id)) { json(res, 200, { ok: false, error: "缺少合法 id" }); return; }
           deleteTag(db, id);
           json(res, 200, { ok: true });
+          return;
+        }
+
+        // ── T4：功能开关（角色功能 / 经验卡） ──
+        if (isPost && urlPath.endsWith("/api/switch")) {
+          const b = await body();
+          const key = String(b?.key ?? "");
+          if (key !== "role" && key !== "exp") { json(res, 200, { ok: false, error: `未知开关：${key}` }); return; }
+          // 硬规则：角色未启用时经验卡不可启用（db 层显式抛错，这里如实回传）
+          json(res, 200, { ok: true, switches: setSwitch(db, key, !!b?.enabled) });
+          return;
+        }
+
+        // ── T4：角色「经验槽」（POST 替换式绑定；GET 读当前槽） ──
+        if (urlPath.endsWith("/api/role/exps")) {
+          if (req.method === "GET") {
+            const q = new URL(req.url ?? "", "http://localhost").searchParams;
+            const roleId = Number(q.get("roleId"));
+            if (!Number.isInteger(roleId)) { json(res, 200, { ok: false, error: "缺少合法 roleId" }); return; }
+            json(res, 200, { ok: true, exps: listRoleExps(db, roleId) });
+            return;
+          }
+          const b = await body();
+          const roleId = Number(b?.roleId);
+          if (!Number.isInteger(roleId)) { json(res, 200, { ok: false, error: "缺少合法 roleId" }); return; }
+          const r = setRoleExps(db, roleId, normIds(b?.expIds));
+          json(res, 200, { ok: true, ...r, exps: listRoleExps(db, roleId) });
+          return;
+        }
+
+        // ── T4：反查——该经验卡被哪些角色绑定 ──
+        if (req.method === "GET" && urlPath.endsWith("/api/exp/roles")) {
+          const q = new URL(req.url ?? "", "http://localhost").searchParams;
+          const id = Number(q.get("id"));
+          if (!Number.isInteger(id)) { json(res, 200, { ok: false, error: "缺少合法 id" }); return; }
+          json(res, 200, { ok: true, roles: listRolesOfExp(db, id) });
           return;
         }
 

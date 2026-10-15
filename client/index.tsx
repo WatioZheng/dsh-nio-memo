@@ -57,15 +57,32 @@ interface PermBits {
   permCurrentLevelId: number | null; permCurrentLevelName: string
 }
 interface IronClause extends PermBits { id: number; title: string; path: string; content: string; origin: Origin }
+/** 卡片形态（T4）：备忘 / 动态规矩 / 角色 / 经验卡 */
+type CardState = 'memo' | 'rule' | 'role' | 'exp'
+/** 形态中文名（UI 显示；与宿主 STATE_LABEL 同口径） */
+const STATE_LABEL: Record<CardState, string> = { memo: '备忘', rule: '动态规矩', role: '角色', exp: '经验卡' }
+/** 索引型：不参与「升为规矩 / 降为备忘」互迁（T4） */
+const isIndexOnly = (s: CardState) => s === 'role' || s === 'exp'
+
+/** 功能开关（T4）：角色功能 / 经验卡；expEffective = 角色开 && 经验卡开 */
+interface Switches { roleEnabled: boolean; expEnabled: boolean; expEffective: boolean }
+const DEFAULT_SWITCHES: Switches = { roleEnabled: true, expEnabled: true, expEffective: true }
+
+/** 角色经验槽里的一项 */
+interface RoleExpRef { id: number; name: string; path: string; enabled: boolean; deleted: boolean }
+
 interface MemoCard extends PermBits {
   id: number; name: string; keywords: string[]; path: string
-  state: 'memo' | 'rule'; enabled: boolean; origin: Origin; content: string
-  deletedAt: string | null; tags: CardTag[]
+  state: CardState; enabled: boolean; origin: Origin; content: string
+  deletedAt: string | null; tags: CardTag[]; updatedAt?: string; version?: number
 }
 interface AllData {
   ok: boolean; error?: string
   iron: IronClause[]; rules: MemoCard[]; memos: MemoCard[]
+  /** T4：角色卡 / 经验卡（经验卡无独立 tab，只在「设置 → 经验卡」与其反查里出现） */
+  roles?: MemoCard[]; exps?: MemoCard[]
   tags: Tag[]; trashCount: number
+  switches?: Switches
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -156,6 +173,8 @@ const css = `
 .nm2-tag{font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(128,128,128,.14);color:var(--dsw-alias-label-tertiary,#8b8d98);flex-shrink:0;white-space:nowrap}
 .nm2-tag.lock{background:rgba(198,42,47,.12);color:var(--dsw-static-red-11,#c62a2f)}
 .nm2-tag.rule{background:rgba(37,99,235,.12);color:var(--dsw-alias-state-business-primary,#2563eb)}
+.nm2-tag.role{background:rgba(124,58,237,.14);color:#6d28d9}
+.nm2-tag.exp{background:rgba(8,145,178,.14);color:#0e7490}
 .nm2-tag.origin-default{background:rgba(37,99,235,.10);color:var(--dsw-alias-state-business-primary,#2563eb)}
 .nm2-tag.origin-custom{background:rgba(22,163,74,.14);color:#15803d}
 .nm2-beta{font-size:9px;font-weight:600;margin-left:4px;padding:0 4px;border-radius:4px;background:rgba(234,88,12,.16);color:#c2410c;vertical-align:1px}
@@ -308,7 +327,9 @@ function Card({ card, onOpen, onToggle, onMenu, onLevel, busy }: {
         </div>
         <div className="nm2-card-foot">
           <OriginTag origin={card.origin} />
-          {isRule ? <span className="nm2-tag rule">动态</span> : null}
+          {card.state === 'rule' ? <span className="nm2-tag rule">动态规矩</span> : null}
+          {card.state === 'role' ? <span className="nm2-tag role">角色</span> : null}
+          {card.state === 'exp' ? <span className="nm2-tag exp">经验卡</span> : null}
           {card.enabled ? null : <span className="nm2-tag">已停用</span>}
           {card.tags.map((t) => <span key={t.id} className="nm2-tag user">{t.name}</span>)}
         </div>
@@ -445,18 +466,26 @@ export function PermBoard({ kind, id, permEnabled, levels, currentLevelId, curre
   )
 }
 
-export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; __testSub?: 'rules' | 'memo' | 'settings'; __testToast?: string }) {
+export function HandnoteTabView(props: ConvViewProps & {
+  __testData?: AllData; __testSub?: 'rules' | 'roles' | 'memo' | 'settings'; __testToast?: string
+  /** 仅测试用：直接指定设置页子页 / 打开某个内页 / 预置某角色的经验槽（避免 SSR 断言依赖交互） */
+  __testPane?: 'create' | 'tags' | 'trash' | 'exp' | 'advanced'
+  __testDetail?: Detail
+  __testSlot?: RoleExpRef[]
+}) {
   const [data, setData] = useState<AllData | null>(props.__testData ?? null)
   const [err, setErr] = useState('')
-  const [sub, setSub] = useState<'rules' | 'memo' | 'settings'>(props.__testSub ?? 'rules')
-  const [pane, setPane] = useState<'create' | 'trash' | 'tags'>('create')
-  const [detail, setDetail] = useState<Detail | null>(null)
+  const [sub, setSub] = useState<'rules' | 'roles' | 'memo' | 'settings'>(props.__testSub ?? 'rules')
+  const [pane, setPane] = useState<'create' | 'tags' | 'trash' | 'exp' | 'advanced'>(props.__testPane ?? 'create')
+  const [detail, setDetail] = useState<Detail | null>(props.__testDetail ?? null)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({ name: '', keywords: '', tagIds: [] as number[], content: '', version: 1 })
-  const [form, setForm] = useState({ name: '', keywords: '', tagIds: [] as number[], content: '', version: 1 })
+  const [form, setForm] = useState({ type: 'memo' as CardState, name: '', keywords: '', tagIds: [] as number[], content: '', version: 1 })
   const [trash, setTrash] = useState<MemoCard[]>([])
+  /** T4：当前打开的角色卡的「经验槽」（null=非角色/未加载） */
+  const [slot, setSlot] = useState<RoleExpRef[] | null>(props.__testSlot ?? null)
   const [tagModal, setTagModal] = useState<{ card: MemoCard; selected: number[] } | null>(null)
   const [tagDraft, setTagDraft] = useState({ name: '', renameId: 0, renameName: '' })
   /** 悬浮菜单单例（父级持有 → 不可能同时开两个）；坐标按屏幕空间现算 */
@@ -474,7 +503,9 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
       setErr(''); setData({
         ...d,
         iron: d.iron ?? [], rules: d.rules ?? [], memos: d.memos ?? [],
+        roles: d.roles ?? [], exps: d.exps ?? [],
         tags: d.tags ?? [],
+        switches: d.switches ?? DEFAULT_SWITCHES,
       })
       if (sub === 'settings' && pane === 'trash') {
         const t = await getJson<{ ok: boolean; cards: MemoCard[] }>('/nio-memo/api/trash')
@@ -517,6 +548,24 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
 
   const openDetail = (d: Detail) => {
     setDetail(d); setEditing(false); setNote(''); setMenu(null)
+    // T4：打开角色卡 ⇒ 加载其经验槽（非角色卡则清空）
+    if (d.kind === 'card' && d.item.state === 'role') void loadSlot(d.item.id)
+    else setSlot(null)
+  }
+
+  /** T4：读某角色的经验槽 */
+  const loadSlot = async (roleId: number) => {
+    try {
+      const r = await getJson<{ ok: boolean; exps?: RoleExpRef[]; error?: string }>(`/nio-memo/api/role/exps?roleId=${roleId}`)
+      setSlot(r.exps ?? [])
+    } catch { setSlot([]) }
+  }
+
+  /** T4：替换式写某角色的经验槽 */
+  const bindExps = async (roleId: number, expIds: number[]) => {
+    const r = await act('/nio-memo/api/role/exps', { roleId, expIds }, '经验槽已更新')
+    if (r?.exps) setSlot(r.exps as RoleExpRef[])
+    else void loadSlot(roleId)
   }
 
   /** 菜单定位：默认右下；右边不够→左下；下面不够→上方 */
@@ -573,19 +622,38 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
     if (up) { setEditing(false); setDetail({ kind: 'card', item: up }) }
   }
   const submitCreate = async () => {
-    const created = await act('/nio-memo/api/create', form, '已创建（自定义 · 备忘区）')
-    if (created) { setForm({ name: '', keywords: '', tagIds: [], content: '', version: 1 }); setSub('memo'); setDetail({ kind: 'card', item: created }) }
+    const t = form.type
+    const created = await act('/nio-memo/api/create', form, `已创建（自定义 · ${STATE_LABEL[t]}）`)
+    if (created) {
+      setForm({ type: t, name: '', keywords: '', tagIds: [], content: '', version: 1 })
+      if (t === 'role') setSub('roles')
+      else if (t === 'exp') { setSub('settings'); setPane('exp') }
+      else setSub(t === 'rule' ? 'rules' : 'memo')
+      setDetail({ kind: 'card', item: created })
+    }
   }
   const userTags = (data?.tags ?? []).filter((t) => !t.system)
 
-  /** 某标签下的卡片：系统标签（默认/自定义）按 origin 过滤，其余按打标过滤 */
+  /** 某标签下的卡片：系统标签（默认/自定义）按 origin 过滤，其余按打标过滤。
+   *  T4：角色 / 经验卡同样可打标，故一并纳入（批量「转区」只对备忘↔规矩生效）。 */
   const tagCards = (tag: Tag): MemoCard[] => {
+    const all = [...data.memos, ...data.rules, ...(data.roles ?? []), ...(data.exps ?? [])]
     if (tag.system) {
       const origin: Origin = tag.name === '默认' ? 'default' : 'custom'
-      return data.memos.concat(data.rules).filter((c) => c.origin === origin)
+      return all.filter((c) => c.origin === origin)
     }
-    return data.memos.concat(data.rules).filter((c) => c.tags.some((t) => t.id === tag.id))
+    return all.filter((c) => c.tags.some((t) => t.id === tag.id))
   }
+
+  // T4：开关 + 角色/经验卡派生列表（老数据/测试数据可能没带 switches ⇒ 兜底为默认开）
+  // ⚠ 必须定义在 head / 内页之前：内页「经验槽」与 tab 显隐都要用
+  const sw: Switches = data.switches ?? DEFAULT_SWITCHES
+  const roles = data.roles ?? []
+  const exps = data.exps ?? []
+  const defRoles = roles.filter((c) => c.origin === 'default')
+  const cstmRoles = roles.filter((c) => c.origin === 'custom')
+  const defExps = exps.filter((c) => c.origin === 'default')
+  const cstmExps = exps.filter((c) => c.origin === 'custom')
 
   const head = (
     <div className="nm2-head">
@@ -594,6 +662,11 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
         <button className={sub === 'rules' ? 'on' : ''} onClick={() => { setSub('rules'); setDetail(null) }}>
           <span>规矩</span><b>{data ? data.iron.length + data.rules.length : ''}</b>
         </button>
+        {sw.roleEnabled ? (
+          <button className={sub === 'roles' ? 'on' : ''} onClick={() => { setSub('roles'); setDetail(null) }}>
+            <span>角色</span><b>{data ? roles.length : ''}</b>
+          </button>
+        ) : null}
         <button className={sub === 'memo' ? 'on' : ''} onClick={() => { setSub('memo'); setDetail(null) }}>
           <span>备忘</span><b>{data ? data.memos.length : ''}</b>
         </button>
@@ -711,10 +784,14 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
                 <>
                   <div className="nm2-detail-acts">
                     <button className="nm2-btn" disabled={busy} onClick={() => void act('/nio-memo/api/toggle', { id: detail.item.id })}>{detail.item.enabled ? '停用' : '启用'}</button>
-                    <button className="nm2-btn primary" disabled={busy}
-                      onClick={() => void act(detail.item.state === 'rule' ? '/nio-memo/api/demote' : '/nio-memo/api/promote', { id: detail.item.id })}>
-                      {detail.item.state === 'rule' ? '降为备忘' : '立为规矩'}
-                    </button>
+                    {!isIndexOnly(detail.item.state) ? (
+                      <button className="nm2-btn primary" disabled={busy}
+                        onClick={() => void act(detail.item.state === 'rule' ? '/nio-memo/api/demote' : '/nio-memo/api/promote', { id: detail.item.id })}>
+                        {detail.item.state === 'rule' ? '降为备忘' : '立为规矩'}
+                      </button>
+                    ) : (
+                      <span className="nm2-tag">{STATE_LABEL[detail.item.state]} · 索引型（不参与互迁）</span>
+                    )}
                     <button className="nm2-btn" disabled={busy} onClick={() => startEdit(detail.item as MemoCard)}>编辑</button>
                     <button className="nm2-btn" disabled={busy}
                       onClick={async () => { const c = await act('/nio-memo/api/copy', { id: detail.item.id }, '已复制为自定义卡'); if (c) setDetail({ kind: 'card', item: c }) }}>复制</button>
@@ -724,6 +801,53 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
                       onClick={async () => { const c = await act('/nio-memo/api/delete', { id: detail.item.id }, '已移入回收站'); if (c) setDetail(null) }}>删除</button>
                   </div>
                   {renderMd(detail.item.content)}
+                  {detail.item.state === 'role' ? (
+                    <div className="nm2-permsec">
+                      <div className="nm2-sec">经验槽<small>绑定经验卡（T4）· 仅索引随角色被读取时触发</small></div>
+                      {!sw.expEffective ? (
+                        <div className="nm2-tip">
+                          ⚠ 经验卡功能当前<b>未生效</b>（{sw.roleEnabled ? '经验卡开关已关' : '角色功能已关'}）⇒ <b>本板块整块停用</b>。
+                          卡片与绑定<b>都还在</b>，在「设置 → 高级」里重新打开即恢复。
+                        </div>
+                      ) : (
+                        <>
+                          <div className="nm2-help">
+                            绑定后：agent 读取本角色时，会一并带出这些经验卡的<b>索引行</b>（正文需再按路径读一次）。一张经验卡可被<b>多个角色</b>绑定。
+                          </div>
+                          {(slot ?? []).length === 0 ? <div className="nm2-empty">尚未绑定任何经验卡。</div> : (
+                            <div className="nm2-grid">
+                              {(slot ?? []).map((e) => {
+                                const live = exps.find((x) => x.id === e.id)
+                                return (
+                                  <div className="nm2-card" key={e.id} style={{ height: 'auto' }}>
+                                    <div className="nm2-card-name one-line">{e.name}</div>
+                                    <div className="nm2-meta" title={e.path || undefined}>{e.path || '（无路径）'}</div>
+                                    <div className="nm2-kw">
+                                      {e.deleted ? <span>（空引用：经验卡已在回收站/被清除）</span> : (e.enabled ? <span>启用中</span> : <span>（已停用）</span>)}
+                                    </div>
+                                    <div className="nm2-detail-acts">
+                                      {live ? <button className="nm2-btn" disabled={busy} onClick={() => openDetail({ kind: 'card', item: live })}>打开编辑</button> : null}
+                                      <button className="nm2-btn danger" disabled={busy}
+                                        onClick={() => void bindExps(detail.item.id, (slot ?? []).filter((x) => x.id !== e.id).map((x) => x.id))}>解绑</button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                          <div className="nm2-label">可绑定的经验卡（点一下即绑定）</div>
+                          <div className="nm2-kw">
+                            {exps.filter((c) => c.enabled && !c.deletedAt && !(slot ?? []).some((s) => s.id === c.id)).length === 0
+                              ? <span>（没有可绑的经验卡；先去「新建」把类型选为「经验卡」，或到「设置 → 经验卡」里启用已有的）</span>
+                              : exps.filter((c) => c.enabled && !c.deletedAt && !(slot ?? []).some((s) => s.id === c.id)).map((c) => (
+                                <span key={c.id} className="nm2-tag user" style={{ cursor: 'pointer' }}
+                                  onClick={() => void bindExps(detail.item.id, [...(slot ?? []).map((x) => x.id), c.id])}>+ {c.name}</span>
+                              ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                   <PermBoard
                     kind="card" id={detail.item.id}
                     permEnabled={detail.item.permEnabled} levels={detail.item.permLevels}
@@ -741,7 +865,8 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
                 const ids = tagCards(detail.item).map((c) => c.id)
                 if (!ids.length) { setNote('✗ 该标签下暂无卡片'); return }
                 if (op === 'delete' && !window.confirm(`把该标签下的 ${ids.length} 张卡移入回收站？`)) return
-                await act('/nio-memo/api/batch', { ids, op, state }, `批量操作完成（${ids.length} 张）`)
+                const r = await act('/nio-memo/api/batch', { ids, op, state })
+                if (r) setNote(`批量操作完成：实际生效 ${r.changed ?? 0} 张（选中 ${ids.length} 张；角色 / 经验卡不参与「转区」）`)
               }} />
           )}
         </div>
@@ -753,6 +878,8 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
   const cstmRules = data.rules.filter((c) => c.origin === 'custom')
   const defMemos = data.memos.filter((c) => c.origin === 'default')
   const cstmMemos = data.memos.filter((c) => c.origin === 'custom')
+  // 角色功能关闭 ⇒ 角色 tab 隐藏、角色页不参与渲染（数据仍在，重开即回来）
+  const subEff: 'rules' | 'roles' | 'memo' | 'settings' = (sub === 'roles' && !sw.roleEnabled) ? 'rules' : sub
 
   return (
     <div className="nm2-panel">{toast ? <div className="nm2-toast">{toast}</div> : null}
@@ -760,7 +887,7 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
       <div className="nm2-main">
         {note ? <div className={note.startsWith('✗') ? 'nm2-err' : 'nm2-help'}>{note}</div> : null}
 
-        {sub === 'rules' ? (
+        {subEff === 'rules' ? (
           <>
             <div className="nm2-help">
               <b>规矩</b>＝必须遵守的规则，<b>默认注入系统提示词</b>。「铁律」锁死——不可编辑、不可关闭，每轮无条件全文注入；
@@ -807,7 +934,26 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
               onMenu={(c, el) => openMenu(c, el)}
               onLevel={(c, el) => openLevelMenu('card', c.id, c.permLevels, c.permCurrentLevelId, el)} />
           </>
-        ) : sub === 'memo' ? (
+        ) : subEff === 'roles' ? (
+          <>
+            <div className="nm2-help">
+              <b>角色</b>＝索引型实体，<b>不参与「升为规矩 / 降为备忘」互迁</b>：启用中的角色每轮只注入<b>一行索引</b>（名 / 关键词 / 路径），
+              agent 命中时用 <code>nio_memo(路径)</code> 读取；读取时**只**会一并带出其<b>经验槽</b>内经验卡的索引行（正文需再读一次）。
+              用不到角色时，可在「设置 → 高级」整体关闭（停注入 + 隐藏本 tab，数据与绑定都保留）。
+            </div>
+            {roles.length === 0 ? <div className="nm2-empty">暂无角色卡。可在「设置 → 创建」把类型选为「角色」来新建。</div> : null}
+            <CardGroup cards={defRoles} title="角色 · 默认" busy={busy}
+              onOpen={(c) => openDetail({ kind: 'card', item: c })}
+              onToggle={(c) => void act('/nio-memo/api/toggle', { id: c.id })}
+              onMenu={(c, el) => openMenu(c, el)}
+              onLevel={(c, el) => openLevelMenu('card', c.id, c.permLevels, c.permCurrentLevelId, el)} />
+            <CardGroup cards={cstmRoles} title="角色 · 自定义" busy={busy}
+              onOpen={(c) => openDetail({ kind: 'card', item: c })}
+              onToggle={(c) => void act('/nio-memo/api/toggle', { id: c.id })}
+              onMenu={(c, el) => openMenu(c, el)}
+              onLevel={(c, el) => openLevelMenu('card', c.id, c.permLevels, c.permCurrentLevelId, el)} />
+          </>
+        ) : subEff === 'memo' ? (
           <>
             <div className="nm2-help">
               <b>备忘</b>＝按需查阅的卡片，<b>平时不占上下文</b>：默认只注入「卡片名 / 关键词 / 路径」，命中关键词时 agent 用 <code>nio_memo(路径)</code> 取全文；
@@ -830,18 +976,35 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
             <div className="nm2-tabs" style={{ marginBottom: 4 }}>
               <button className={pane === 'create' ? 'on' : ''} onClick={() => setPane('create')}>创建</button>
               <button className={pane === 'tags' ? 'on' : ''} onClick={() => setPane('tags')}>标签</button>
+              {sw.roleEnabled ? (
+                <button className={pane === 'exp' ? 'on' : ''} onClick={() => setPane('exp')}>
+                  经验卡{exps.length ? `（${exps.length}）` : ''}{sw.expEffective ? '' : ' · 已停用'}
+                </button>
+              ) : null}
+              <button className={pane === 'advanced' ? 'on' : ''} onClick={() => setPane('advanced')}>高级</button>
               <button className={pane === 'trash' ? 'on' : ''} onClick={() => { setPane('trash'); void load() }}>回收站{data.trashCount ? `（${data.trashCount}）` : ''}</button>
             </div>
 
             {pane === 'create' ? (
               <>
                 <div className="nm2-help">
-                  手写一张 <b>自定义</b> 卡（落「备忘」区，之后可「立为规矩」）。
+                  手写一张 <b>自定义</b> 卡。先在上面选<b>要创建的类型</b>：备忘 / 规矩 / 角色 / 经验卡——
+                  备忘与规矩之间可互迁；<b>角色与经验卡是索引型，不参与互迁</b>。
                 </div>
                 <div className="nm2-tip">
                   💡 <b>交给 agent 创建往往更方便有效</b>——你说一句「记住这个」，它会把关键词、正文格式与标签一次写到位。
                 </div>
                 <div className="nm2-form">
+                  <div className="nm2-label">卡片类型（决定落在哪个区 / 如何被使用）</div>
+                  <select className="nm2-input" style={{ maxWidth: 320 }} value={form.type}
+                    onChange={(e) => setForm({ ...form, type: e.target.value as CardState })}>
+                    <option value="memo">备忘卡 —— 索引按需查阅（默认）</option>
+                    <option value="rule">规矩（动态）—— 每轮全文注入</option>
+                    {sw.roleEnabled ? <option value="role">角色 —— 每轮注入一行索引；可绑经验卡</option> : null}
+                    {sw.expEffective ? <option value="exp">经验卡 —— 不注入；靠角色经验槽绑定触发</option> : null}
+                  </select>
+                  {!sw.roleEnabled ? <div className="nm2-help">角色功能当前已关闭（在「高级」里开），故不提供「角色 / 经验卡」选项。</div> : null}
+                  {sw.roleEnabled && !sw.expEffective ? <div className="nm2-help">经验卡当前已关闭（在「高级」里开），故不提供「经验卡」选项。</div> : null}
                   <div className="nm2-label">标题（唯一，路径按它生成）</div>
                   <input className="nm2-input" placeholder="例如：我的部署小抄" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                   <div className="nm2-label">关键词（顿号 / 逗号分隔，命中关键词时 agent 会来读它）</div>
@@ -861,8 +1024,61 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
                   <div className="nm2-label">内容（Markdown）</div>
                   <textarea className="nm2-textarea" placeholder={'# 标题\n\n正文…'} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} />
                   <div className="nm2-form-acts">
-                    <button className="nm2-btn primary" disabled={busy || !form.name.trim()} onClick={() => void submitCreate()}>创建</button>
-                    <button className="nm2-btn" disabled={busy} onClick={() => setForm({ name: '', keywords: '', tagIds: [], content: '', version: 1 })}>清空</button>
+                    <button className="nm2-btn primary" disabled={busy || !form.name.trim()} onClick={() => void submitCreate()}>创建{STATE_LABEL[form.type]}</button>
+                    <button className="nm2-btn" disabled={busy} onClick={() => setForm({ type: form.type, name: '', keywords: '', tagIds: [], content: '', version: 1 })}>清空</button>
+                  </div>
+                </div>
+              </>
+            ) : pane === 'exp' ? (
+              <>
+                <div className="nm2-help">
+                  <b>经验卡</b>：<b>不进每轮注入</b>，也没有独立 tab。它的索引只挂在<b>角色的经验槽</b>里 ——
+                  只有该角色被 agent 读取时，才会跟着带出它的索引行（正文需再按路径读一次）。一张经验卡可被<b>多个角色</b>绑定。
+                </div>
+                {!sw.expEffective ? (
+                  <div className="nm2-tip">
+                    ⚠ 经验卡功能当前<b>未生效</b>（{sw.roleEnabled ? '经验卡开关已关' : '角色功能已关'}）⇒
+                    角色内页的「经验槽」<b>整块停用</b>、读角色<b>不再带出</b>经验卡索引。
+                    卡片与绑定<b>都还在</b>，在「高级」里重新打开即恢复，无需二次操作。
+                  </div>
+                ) : null}
+                {exps.length === 0 ? <div className="nm2-empty">暂无经验卡。可在「创建」里把类型选为「经验卡」来新建。</div> : null}
+                <CardGroup cards={defExps} title="经验卡 · 默认" busy={busy}
+                  onOpen={(c) => openDetail({ kind: 'card', item: c })}
+                  onToggle={(c) => void act('/nio-memo/api/toggle', { id: c.id })}
+                  onMenu={(c, el) => openMenu(c, el)}
+                  onLevel={(c, el) => openLevelMenu('card', c.id, c.permLevels, c.permCurrentLevelId, el)} />
+                <CardGroup cards={cstmExps} title="经验卡 · 自定义" busy={busy}
+                  onOpen={(c) => openDetail({ kind: 'card', item: c })}
+                  onToggle={(c) => void act('/nio-memo/api/toggle', { id: c.id })}
+                  onMenu={(c, el) => openMenu(c, el)}
+                  onLevel={(c, el) => openLevelMenu('card', c.id, c.permLevels, c.permCurrentLevelId, el)} />
+              </>
+            ) : pane === 'advanced' ? (
+              <>
+                <div className="nm2-help">
+                  <b>高级</b>：本页<b>只放功能开关</b>。关闭不会删除任何数据 —— 卡片、绑定、设定全部保留，重新打开即恢复。
+                </div>
+                <div className="nm2-form">
+                  <label className="nm2-check">
+                    <input type="checkbox" checked={sw.roleEnabled} disabled={busy}
+                      onChange={() => void act('/nio-memo/api/switch', { key: 'role', enabled: !sw.roleEnabled },
+                        sw.roleEnabled ? '角色功能已关闭（停注入 + 隐藏 tab；数据保留）' : '角色功能已启用')} />
+                    <span><b>角色功能</b> —— 关闭后：角色索引<b>不再注入</b>，「角色」tab <b>隐藏</b>；数据与绑定保留。</span>
+                  </label>
+                  <label className="nm2-check" style={{ opacity: sw.roleEnabled ? 1 : 0.5 }}>
+                    <input type="checkbox" checked={sw.expEnabled} disabled={busy || !sw.roleEnabled}
+                      onChange={() => void act('/nio-memo/api/switch', { key: 'exp', enabled: !sw.expEnabled },
+                        sw.expEnabled ? '经验卡已关闭（经验槽停用；绑定保留）' : '经验卡已启用')} />
+                    <span><b>经验卡</b> —— 关闭后：角色内页的「经验槽」<b>整块停用</b>，读角色不再带出经验卡索引；绑定<b>全部保留</b>。</span>
+                  </label>
+                  {!sw.roleEnabled ? (
+                    <div className="nm2-help">
+                      ⚠ 角色功能未启用 ⇒ <b>经验卡不可启用</b>（该开关置灰不可点）；它的原设定值<b>已保留</b>，重开角色即恢复。
+                    </div>
+                  ) : null}
+                  <div className="nm2-help">
+                    当前状态：角色功能=<b>{sw.roleEnabled ? '开' : '关'}</b> · 经验卡开关=<b>{sw.expEnabled ? '开' : '关'}</b>（原设定） · 经验卡实际生效=<b>{sw.expEffective ? '是' : '否'}</b>
                   </div>
                 </div>
               </>
@@ -878,7 +1094,7 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
                         <div className="nm2-card-head">
                           <div className="nm2-card-name">{c.name}</div>
                           <OriginTag origin={c.origin} />
-                          <span className="nm2-tag">{c.state === 'rule' ? '动态规矩' : '备忘'}</span>
+                          <span className="nm2-tag">{STATE_LABEL[c.state] ?? '备忘'}</span>
                         </div>
                         <div className="nm2-path">{c.path}</div>
                         <div className="nm2-detail-acts">
@@ -957,10 +1173,13 @@ export function HandnoteTabView(props: ConvViewProps & { __testData?: AllData; _
             {menu.type === 'card' ? (
               <>
                 <button onClick={() => { const c = menu.card; setMenu(null); openDetail({ kind: 'card', item: c }) }}>打开</button>
-                <button onClick={() => {
-                  const c = menu.card; setMenu(null)
-                  void act(c.state === 'rule' ? '/nio-memo/api/demote' : '/nio-memo/api/promote', { id: c.id })
-                }}>{menu.card.state === 'rule' ? '降为备忘' : '立为规矩'}</button>
+                {/* T4：角色 / 经验卡是索引型，不提供「升为规矩 / 降为备忘」 */}
+                {!isIndexOnly(menu.card.state) ? (
+                  <button onClick={() => {
+                    const c = menu.card; setMenu(null)
+                    void act(c.state === 'rule' ? '/nio-memo/api/demote' : '/nio-memo/api/promote', { id: c.id })
+                  }}>{menu.card.state === 'rule' ? '降为备忘' : '立为规矩'}</button>
+                ) : null}
                 <button onClick={() => {
                   const c = menu.card; setMenu(null)
                   setTagModal({ card: c, selected: c.tags.map((t) => t.id).filter((id) => userTags.some((t) => t.id === id)) })
@@ -1036,7 +1255,7 @@ function TagDetail({ tag, cards, busy, onBatch, onOpen }: {
               <div className="nm2-path">{c.path}</div>
               <div className="nm2-card-foot">
                 <OriginTag origin={c.origin} />
-                <span className="nm2-tag">{c.state === 'rule' ? '动态规矩' : '备忘'}</span>
+                <span className="nm2-tag">{STATE_LABEL[c.state] ?? '备忘'}</span>
                 {c.enabled ? null : <span className="nm2-tag">已停用</span>}
                 {c.tags.map((t) => <span key={t.id} className="nm2-tag user">{t.name}</span>)}
               </div>

@@ -20,9 +20,10 @@ import {
   updatePermissionLevel, deletePermissionLevel, deletePermission, restorePermission,
   touchCard, updateCard,
   setPermEnabled, setPermCurrentLevel, addPermLevel, updatePermLevel, deletePermLevel, getPermState,
+  getSwitches, setSwitch, listRoleExps, setRoleExps, listRolesOfExp,
 } from "../db";
 import { parseMd, blocksToText } from "../../client/md";
-import { buildInjectText } from "../inject";
+import { buildInjectText, buildRoleReadText } from "../inject";
 
 let passed = 0;
 function ok(label: string, fn: () => void): void {
@@ -376,6 +377,114 @@ ok("批量：转区 / 启停 / 删除", () => {
   for (const id of [a.id, b.id]) purgeCard(db, id);
   deleteTag(db, t.id);
 });
+
+// ── 19. T4：角色 / 经验卡（索引型实体 + 多对多绑定 + 三级开关真值表） ──
+const t4expA = createCard(db, { name: "T4经验A", keywords: ["剑法"], content: "经验A正文" }, "exp");
+const t4expB = createCard(db, { name: "T4经验B", keywords: ["身法"], content: "经验B正文" }, "exp");
+const t4role = createCard(db, { name: "T4角色", keywords: ["试"], content: "角色正文" }, "role");
+const t4role2 = createCard(db, { name: "T4角色二", keywords: ["试"], content: "角色二正文" }, "role");
+
+ok("T4 路径派生：角色/ 与 经验/", () => {
+  assert.equal(t4role.path, "角色/T4角色.md");
+  assert.equal(t4expA.path, "经验/T4经验A.md");
+  assert.equal(getCardByPath(db, "角色/T4角色.md")!.id, t4role.id);
+  assert.equal(getCardByPath(db, "经验/T4经验A.md")!.id, t4expA.id);
+});
+
+ok("T4 绑定：角色绑多张 + 一张经验卡可被多角色绑（多对多）", () => {
+  const r = setRoleExps(db, t4role.id, [t4expA.id, t4expB.id]);
+  assert.equal(r.linked.length, 2);
+  assert.equal(r.ignored.length, 0);
+  assert.equal(listRoleExps(db, t4role.id).length, 2);
+  setRoleExps(db, t4role2.id, [t4expA.id]);
+  assert.equal(listRolesOfExp(db, t4expA.id).length, 2);
+});
+
+ok("T4 绑定：非经验卡 id 被忽略并回报（不静默吞）", () => {
+  const r = setRoleExps(db, t4role.id, [t4expA.id, t4role2.id, 999999]);
+  assert.equal(r.linked.length, 1);
+  assert.deepEqual([...r.ignored].sort((a, b) => a - b), [t4role2.id, 999999].sort((a, b) => a - b));
+  assert.equal(setRoleExps(db, t4role.id, [t4expA.id, t4expB.id]).linked.length, 2);   // 复原
+});
+
+ok("T4 索引型不参与升/降（显式报错）", () => {
+  assert.throws(() => setCardState(db, t4role.id, "memo"), /不参与/);
+  assert.throws(() => setCardState(db, t4expA.id, "rule"), /不参与/);
+  assert.throws(() => setRoleExps(db, t4expA.id, [t4expB.id]), /不是角色卡/);
+});
+
+ok("T4 注入：角色进索引；经验卡名与正文**永不**进注入", () => {
+  const txt = buildInjectText(db);
+  assert.ok(txt.includes("手记 · 角色"), "应含角色段");
+  assert.ok(txt.includes("角色/T4角色.md"), "应含角色路径");
+  assert.ok(!txt.includes("T4经验A"), "经验卡名不进注入");
+  assert.ok(!txt.includes("经验A正文"), "经验卡正文不进注入");
+});
+
+ok("T4 真值表[角色开·经验卡开]：读角色带出经验卡索引行（非正文）", () => {
+  setSwitch(db, "role", true); setSwitch(db, "exp", true);
+  const sw = getSwitches(db);
+  assert.deepEqual([sw.roleEnabled, sw.expEnabled, sw.expEffective], [true, true, true]);
+  const t = buildRoleReadText(db, getCardById(db, t4role.id)!);
+  assert.ok(t.includes("## 经验槽"));
+  assert.ok(t.includes("T4经验A") && t.includes("经验/T4经验A.md"));
+  assert.ok(t.includes("T4经验B"));
+  assert.ok(!t.includes("经验A正文"), "只给索引行，不给正文（两步读取是有意设计）");
+});
+
+ok("T4 真值表[角色开·经验卡关]：角色索引仍在；经验槽整块停用且显式说明", () => {
+  setSwitch(db, "exp", false);
+  const sw = getSwitches(db);
+  assert.deepEqual([sw.roleEnabled, sw.expEnabled, sw.expEffective], [true, false, false]);
+  assert.ok(buildInjectText(db).includes("角色/T4角色.md"), "角色索引不受经验卡开关影响");
+  const t = buildRoleReadText(db, getCardById(db, t4role.id)!);
+  assert.ok(!t.includes("T4经验A"), "未生效 ⇒ 不带出经验卡索引");
+  assert.ok(t.includes("未生效"), "必须显式写明原因（禁静默兜底）");
+});
+
+ok("T4 真值表[角色关]：角色段整段不注入；经验卡原设定被压制但**保留**", () => {
+  setSwitch(db, "role", true); setSwitch(db, "exp", true); setSwitch(db, "role", false);
+  const sw = getSwitches(db);
+  assert.equal(sw.roleEnabled, false);
+  assert.equal(sw.expEnabled, true, "原设定必须保留（不清零）");
+  assert.equal(sw.expEffective, false);
+  const txt = buildInjectText(db);
+  assert.ok(!txt.includes("手记 · 角色") && !txt.includes("角色/T4角色.md"), "角色段整段不注入");
+});
+
+ok("T4 硬规则：角色未启用时经验卡不可启用（显式报错，不静默改写）", () => {
+  assert.throws(() => setSwitch(db, "exp", true), /角色功能未启用/);
+});
+
+ok("T4 恢复：重开角色 ⇒ 经验卡立即恢复生效（无需二次操作）", () => {
+  setSwitch(db, "role", true);
+  const sw = getSwitches(db);
+  assert.deepEqual([sw.roleEnabled, sw.expEnabled, sw.expEffective], [true, true, true]);
+  assert.ok(buildRoleReadText(db, getCardById(db, t4role.id)!).includes("T4经验A"), "重开后绑定立即回来");
+});
+
+ok("T4 关开关不毁数据：卡片与绑定都在", () => {
+  setSwitch(db, "role", false); setSwitch(db, "role", true);
+  assert.equal(listRoleExps(db, t4role.id).length, 2);
+  assert.equal(listCards(db, "exp").length, 2);
+  assert.equal(listCards(db, "role").length, 2);
+});
+
+ok("T4 经验卡进回收站 ⇒ 槽内留空引用（绑定不删），恢复即回来", () => {
+  deleteCard(db, t4expB.id);
+  const b = listRoleExps(db, t4role.id).find((x) => x.id === t4expB.id)!;
+  assert.ok(b && b.deleted === true, "应标记为已删除");
+  restoreCard(db, t4expB.id);
+  assert.equal(listRoleExps(db, t4role.id).find((x) => x.id === t4expB.id)!.deleted, false);
+});
+
+ok("T4 彻底清除 ⇒ 绑定残留一并清理", () => {
+  purgeCard(db, t4expB.id);
+  assert.equal(listRoleExps(db, t4role.id).some((x) => x.id === t4expB.id), false);
+});
+
+// 清理 T4 样本
+for (const id of [t4role.id, t4role2.id, t4expA.id]) purgeCard(db, id);
 
 console.log(`\n${process.exitCode ? "FAIL" : "PASS"} · ${passed} 项通过`);
 nodeFs.rmSync(dir, { recursive: true, force: true });

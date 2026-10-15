@@ -20,8 +20,24 @@ export function memoDbFile(): string {
   return nodePath.join(memoDir(), "memo.db");
 }
 
-/** 卡片形态：备忘 / 动态规矩 */
-export type CardState = "memo" | "rule";
+/** 卡片形态：备忘 / 动态规矩 / 角色 / 经验卡（T4）
+ *  - memo / rule：可互迁（升为规矩 / 降为备忘）
+ *  - role / exp  ：**索引型，不参与互迁**（角色索引每轮注入；经验卡不注入，靠角色经验槽绑定触发）
+ */
+export type CardState = "memo" | "rule" | "role" | "exp";
+
+/** 四类卡片的中文名（UI 与注入文本共用，避免各处硬编码） */
+export const STATE_LABEL: Record<CardState, string> = {
+  memo: "备忘",
+  rule: "动态规矩",
+  role: "角色",
+  exp: "经验卡",
+};
+
+/** 不参与升/降互迁的形态（T4） */
+export function isIndexOnlyState(s: CardState): boolean {
+  return s === "role" || s === "exp";
+}
 
 export type PermOwnerKind = "card" | "iron";
 export interface PermLevel { id: number; name: string; content: string; color: string; pos: number }

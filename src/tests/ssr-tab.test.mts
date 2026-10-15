@@ -26,24 +26,53 @@ const data: any = {
     { id: 37, name: "DSH重启方式", keywords: ["重启"], path: "备忘/DSH重启方式.md", state: "memo", enabled: true, origin: "default", content: "y", deletedAt: null, tags: [], ...permBits(true, "禁止") },
     { id: 38, name: "普通备忘卡", keywords: ["k"], path: "备忘/普通备忘卡.md", state: "memo", enabled: false, origin: "custom", content: "z", deletedAt: null, tags: [], ...permBits(false, null) },
   ],
+  // T4：角色 / 经验卡 + 三级开关
+  roles: [
+    { id: 61, name: "主理角色", keywords: ["角色"], path: "角色/主理角色.md", state: "role", enabled: true, origin: "custom", content: "# 角色正文", deletedAt: null, tags: [], updatedAt: "2026-10-15T10:00:00.000Z", ...permBits(false, null) },
+  ],
+  exps: [
+    { id: 62, name: "经验甲", keywords: ["甲"], path: "经验/经验甲.md", state: "exp", enabled: true, origin: "custom", content: "经验正文", deletedAt: null, tags: [], ...permBits(false, null) },
+  ],
+  switches: { roleEnabled: true, expEnabled: true, expEffective: true },
   tags: [{ id: 1, name: "默认", system: true, count: 2 }, { id: 3, name: "通用", system: false, count: 1 }],
   trashCount: 1,
 };
 
+/** 角色功能关闭 + 经验卡原设定仍为开（真值表第二/三态） */
+const dataRoleOff: any = { ...data, switches: { roleEnabled: false, expEnabled: true, expEffective: false } };
+
+const render = (props: any): string => {
+  try { return renderToString(React.createElement(HandnoteTabView as any, props)); }
+  catch (e) {
+    console.error("✗ 渲染抛错（会表现为白屏）：", (e as Error)?.message);
+    console.error((e as Error)?.stack?.split("\n").slice(0, 5).join("\n"));
+    process.exit(1);
+  }
+};
+
 let html = "";
-try {
-  html = renderToString(React.createElement(HandnoteTabView as any, { __testData: data, __testSub: "rules" }));
-  html += renderToString(React.createElement(HandnoteTabView as any, { __testData: data, __testSub: "memo" }));
-  html += renderToString(React.createElement(HandnoteTabView as any, { __testData: data, __testSub: "settings" }));
-  // 轻提示（切档后「下一轮生效」）必须在面板里渲染出来（曾经用 position:fixed 会被祖先定位带偏 ⇒ 看不见）
-  html += renderToString(React.createElement(HandnoteTabView as any, {
-    __testData: data, __testSub: "memo", __testToast: "已切到「禁止」 · 下一轮生效（agent 本轮看不到）",
-  }));
-} catch (e) {
-  console.error("✗ 渲染抛错（会表现为白屏）：", (e as Error)?.message);
-  console.error((e as Error)?.stack?.split("\n").slice(0, 5).join("\n"));
-  process.exit(1);
-}
+html = render({ __testData: data, __testSub: "rules" });
+html += render({ __testData: data, __testSub: "memo" });
+html += render({ __testData: data, __testSub: "settings" });
+// 轻提示（切档后「下一轮生效」）必须在面板里渲染出来（曾经用 position:fixed 会被祖先定位带偏 ⇒ 看不见）
+html += render({ __testData: data, __testSub: "memo", __testToast: "已切到「禁止」 · 下一轮生效（agent 本轮看不到）" });
+
+// ── T4：角色 / 经验卡 / 三级开关 的界面渲染 ──
+const htmlRoles = render({ __testData: data, __testSub: "roles" });
+const htmlCreate = render({ __testData: data, __testSub: "settings", __testPane: "create" });
+const htmlAdvanced = render({ __testData: data, __testSub: "settings", __testPane: "advanced" });
+const htmlAdvancedRoleOff = render({ __testData: dataRoleOff, __testSub: "settings", __testPane: "advanced" });
+const htmlExp = render({ __testData: data, __testSub: "settings", __testPane: "exp" });
+const htmlRoleDetail = render({
+  __testData: data, __testSub: "roles",
+  __testDetail: { kind: "card", item: data.roles[0] },
+  __testSlot: [
+    { id: 62, name: "经验甲", path: "经验/经验甲.md", enabled: true, deleted: false },
+    { id: 99, name: "（已不存在 #99）", path: "", enabled: false, deleted: true },
+  ],
+});
+const htmlRoleOff = render({ __testData: dataRoleOff, __testSub: "roles" });
+const htmlExpOff = render({ __testData: dataRoleOff, __testSub: "settings", __testPane: "exp" });
 
 const checks: Array<[string, boolean]> = [
   ["顶部标题", html.includes("手记")],
@@ -59,6 +88,22 @@ const checks: Array<[string, boolean]> = [
   ["卡外底行已退役（无 nm2-entry-foot）", !html.includes("nm2-entry-foot")],
   ["底行确为卡片末子元素（在卡内底部）", /nm2-card-actions[\s\S]{0,900}?<\/div><\/div>/.test(html)],
   ["卡盒升到 with-acts 高度档", html.includes("nm2-card with-acts")],
+  // ── T4：角色 / 经验卡 / 三级开关 ──
+  ["T4 角色 tab 可见（角色功能开）", htmlRoles.includes("角色") && htmlRoles.includes("主理角色")],
+  ["T4 角色页说明含「索引型 / 不参与互迁」", htmlRoles.includes("索引型") && htmlRoles.includes("不参与")],
+  ["T4 创建页有类型下拉（默认备忘）", htmlCreate.includes("<select") && htmlCreate.includes('value="memo"') && htmlCreate.includes("规矩（动态）")],
+  ["T4 创建下拉含角色/经验卡选项", htmlCreate.includes('value="role"') && htmlCreate.includes('value="exp"')],
+  ["T4 高级页只放两个开关", htmlAdvanced.includes("高级") && htmlAdvanced.includes("角色功能") && htmlAdvanced.includes("经验卡")],
+  ["T4 经验卡管理区可见", htmlExp.includes("经验卡") && htmlExp.includes("经验甲")],
+  ["T4 角色功能关 ⇒ 角色 tab 隐藏（页面回落规矩页）", !htmlRoleOff.includes("主理角色")],
+  ["T4 角色功能关 ⇒ 高级页提示经验卡不可启用", htmlAdvancedRoleOff.includes("不可启用")],
+  ["T4 经验卡关 ⇒ 管理区显示未生效提示", htmlExpOff.includes("未生效")],
+  // 角色内页「经验槽」
+  ["T4 角色内页有「经验槽」板块", htmlRoleDetail.includes("经验槽")],
+  ["T4 经验槽列出已绑经验卡（仅索引）", htmlRoleDetail.includes("经验甲") && htmlRoleDetail.includes("经验/经验甲.md")],
+  ["T4 经验槽对已删经验卡显示空引用", htmlRoleDetail.includes("空引用")],
+  ["T4 经验槽有可绑定挑选区", htmlRoleDetail.includes("可绑定的经验卡")],
+  ["T4 角色内页不出现「升/降」按钮", !htmlRoleDetail.includes("立为规矩") && !htmlRoleDetail.includes("降为备忘")],
 ];
 let bad = 0;
 for (const [k, v] of checks) { console.log(`${v ? "✓" : "✗"} ${k}`); if (!v) bad++; }

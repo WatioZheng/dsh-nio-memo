@@ -17,7 +17,7 @@ import * as nodeFs from "node:fs";
 import * as nodePath from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { memoDir, memoDbFile } from "./types";
+import { memoDir, memoDbFile, isIndexOnlyState } from "./types";
 import type { CardOrigin, CardState, CardTag, IronClause, MemoCard, Tag } from "./types";
 import { INDEX_NOTE, IRON_CLAUSES, SAMPLE_CARDS, SEED_RULES } from "./seed";
 
@@ -118,6 +118,13 @@ function ensureSchema(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    );
+    -- T4：角色 ↔ 经验卡 绑定（**多对多**；按 id 挂，经验卡进回收站/被删仍保留关系，
+    --     槽内显示为空引用，恢复即回来 —— 与「关开关不毁数据」口径一致）
+    CREATE TABLE IF NOT EXISTS card_links (
+      role_id INTEGER NOT NULL,
+      exp_id INTEGER NOT NULL,
+      PRIMARY KEY (role_id, exp_id)
     );
   `);
 }
@@ -236,6 +243,14 @@ function parseKeywords(raw: unknown): string[] {
 
 const asOrigin = (v: unknown): CardOrigin => (v === "default" ? "default" : "custom");
 
+/** 形态白名单收口（T4）：库里若出现未知 state 按 memo 处理；四种合法形态原样保留。
+ *  ⚠️ 曾经这里写成 `row.state === 'rule' ? 'rule' : 'memo'` —— 新增 role/exp 后会把它们**静默降级成备忘**，
+ *     导致「角色被当成备忘卡」。故改为白名单，且新增形态必须同步这里。 */
+const asState = (v: unknown): CardState => {
+  const s = String(v ?? "");
+  return s === "rule" || s === "role" || s === "exp" ? (s as CardState) : "memo";
+};
+
 /** 卡片标签（一次取全表映射，避免 N+1） */
 function tagMap(db: DatabaseSync): Map<number, CardTag[]> {
   const rows = db.prepare(
@@ -257,7 +272,7 @@ function toCard(db: DatabaseSync, row: any, tags: CardTag[]): MemoCard {
     name: String(row.name),
     keywords: parseKeywords(row.keywords),
     path: String(row.path),
-    state: (row.state === "rule" ? "rule" : "memo") as CardState,
+    state: asState(row.state),
     enabled: Number(row.enabled) === 1,
     origin: asOrigin(row.origin),
     content: String(row.content ?? ""),
@@ -348,9 +363,14 @@ export function setCardEnabled(db: DatabaseSync, id: number, enabled: boolean): 
   return rowById(db, id);
 }
 
-/** 升/降：只改 state；路径不随升降变化 */
+/** 升/降：只改 state；路径不随升降变化。
+ *  T4：**角色 / 经验卡是索引型，不参与互迁** —— 源或目标任一侧是 role/exp 一律拒绝（显式报错，不静默忽略）。 */
 export function setCardState(db: DatabaseSync, id: number, state: CardState): MemoCard | null {
-  if (!rowById(db, id)) return null;
+  const cur = rowById(db, id);
+  if (!cur) return null;
+  if (isIndexOnlyState(cur.state) || isIndexOnlyState(state)) {
+    throw new Error(`「${cur.name}」是${cur.state === "role" ? "角色" : "经验卡"}（索引型），不参与「升为规矩 / 降为备忘」互迁`);
+  }
   db.prepare(`UPDATE cards SET state = ?, updated_at = ? WHERE id = ?`)
     .run(state, new Date().toISOString(), id);
   return rowById(db, id);
@@ -358,7 +378,10 @@ export function setCardState(db: DatabaseSync, id: number, state: CardState): Me
 
 /** 路径由「区 + 卡名」派生（改名会跟随更新路径） */
 function pathFor(state: CardState, name: string): string {
-  return state === "rule" ? `规矩/动态/${name}.md` : `备忘/${name}.md`;
+  if (state === "rule") return `规矩/动态/${name}.md`;
+  if (state === "role") return `角色/${name}.md`;
+  if (state === "exp") return `经验/${name}.md`;
+  return `备忘/${name}.md`;
 }
 
 export interface CardDraft {
@@ -473,6 +496,8 @@ export function restoreCard(db: DatabaseSync, id: number): MemoCard {
 export function purgeCard(db: DatabaseSync, id: number): void {
   if (!rowById(db, id)) throw new Error(`未找到卡片 id=${id}`);
   db.prepare(`DELETE FROM card_tags WHERE card_id = ?`).run(id);
+  // T4：清掉该卡作为角色/经验卡的绑定残留（软删除时刻意**保留**，为的是恢复即回来）
+  db.prepare(`DELETE FROM card_links WHERE role_id = ? OR exp_id = ?`).run(id, id);
   db.prepare(`DELETE FROM cards WHERE id = ?`).run(id);
 }
 
@@ -546,7 +571,13 @@ export function setCardsState(db: DatabaseSync, ids: number[], state: CardState)
   let n = 0;
   db.exec("BEGIN");
   try {
-    for (const id of ids) n += Number(st.run(state, now, id).changes);
+    for (const id of ids) {
+      const cur = rowById(db, id);
+      if (!cur) continue;
+      // T4：角色 / 经验卡是索引型，批量转区时**跳过**（不静默改名，由调用方按 changed 计数如实呈现）
+      if (isIndexOnlyState(cur.state) || isIndexOnlyState(state)) continue;
+      n += Number(st.run(state, now, id).changes);
+    }
     db.exec("COMMIT");
   } catch (e) { db.exec("ROLLBACK"); throw e; }
   return n;
@@ -770,4 +801,104 @@ export function permForInject(db: DatabaseSync, kind: PermOwnerKind, ownerId: nu
   if (!st.enabled || !st.currentLevelId) return null;
   const cur = st.levels.find((l) => l.id === st.currentLevelId);
   return { levelName: st.currentLevelName, content: (cur?.content ?? "").trim() };
+}
+
+// ================================================================
+// T4：开关（角色功能 / 经验卡）与「角色 ↔ 经验卡」绑定
+// ================================================================
+
+/** meta 通用读（缺省返回 null，不静默兜底成空串） */
+export function getMeta(db: DatabaseSync, key: string): string | null {
+  const row = db.prepare(`SELECT value FROM meta WHERE key = ?`).get(key) as any;
+  return row ? String(row.value) : null;
+}
+
+/** meta 通用写（upsert） */
+export function setMeta(db: DatabaseSync, key: string, value: string): void {
+  db.prepare(`INSERT INTO meta (key, value) VALUES (?, ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value);
+}
+
+export const SWITCH_ROLE = "role_enabled";
+export const SWITCH_EXP = "exp_enabled";
+
+export interface MemoSwitches {
+  /** 角色功能开关（默认开） */
+  roleEnabled: boolean;
+  /** 经验卡开关的**原设定值**（默认开；角色关闭时不清零，仅被压制） */
+  expEnabled: boolean;
+  /** 经验卡**实际生效** = 角色开 && 经验卡开（角色关闭时压制经验卡） */
+  expEffective: boolean;
+}
+
+export function getSwitches(db: DatabaseSync): MemoSwitches {
+  const roleEnabled = getMeta(db, SWITCH_ROLE) !== "0";
+  const expEnabled = getMeta(db, SWITCH_EXP) !== "0";
+  return { roleEnabled, expEnabled, expEffective: roleEnabled && expEnabled };
+}
+
+/**
+ * 写开关（T4 硬规则）：**角色未启用时，经验卡不可启用** —— 显式报错，不静默改写。
+ * 角色关闭**不动**经验卡的原设定值（两者分开存），重开角色即恢复用户原设定。
+ */
+export function setSwitch(db: DatabaseSync, key: "role" | "exp", enabled: boolean): MemoSwitches {
+  if (key === "exp" && enabled && !getSwitches(db).roleEnabled) {
+    throw new Error("角色功能未启用：经验卡不可启用（请先在 设置 → 高级 启用角色功能）");
+  }
+  setMeta(db, key === "role" ? SWITCH_ROLE : SWITCH_EXP, enabled ? "1" : "0");
+  return getSwitches(db);
+}
+
+export interface RoleExpRef {
+  id: number;
+  name: string;
+  path: string;
+  enabled: boolean;
+  /** 在回收站（软删除）或已被彻底清除 */
+  deleted: boolean;
+}
+
+/** 角色经验槽：按 id 顺序返回绑定的经验卡；指向已删除/不存在的也照返（槽内显示空引用，恢复即回来） */
+export function listRoleExps(db: DatabaseSync, roleId: number): RoleExpRef[] {
+  const rows = db.prepare(`SELECT exp_id FROM card_links WHERE role_id = ? ORDER BY exp_id`).all(roleId) as any[];
+  const out: RoleExpRef[] = [];
+  for (const r of rows) {
+    const c = db.prepare(`SELECT id, name, path, enabled, deleted_at FROM cards WHERE id = ?`).get(Number(r.exp_id)) as any;
+    if (!c) { out.push({ id: Number(r.exp_id), name: `（已不存在 #${r.exp_id}）`, path: "", enabled: false, deleted: true }); continue; }
+    out.push({ id: Number(c.id), name: String(c.name), path: String(c.path), enabled: !!c.enabled, deleted: !!c.deleted_at });
+  }
+  return out;
+}
+
+/** 替换式设置某角色的经验槽。非经验卡的 id 一律忽略并回报（显式，不静默吞掉）。 */
+export function setRoleExps(db: DatabaseSync, roleId: number, expIds: number[]): { linked: number[]; ignored: number[] } {
+  const role = rowById(db, roleId);
+  if (!role) throw new Error(`未找到角色 id=${roleId}`);
+  if (role.state !== "role") throw new Error(`「${role.name}」不是角色卡（state=${role.state}），不能绑定经验卡`);
+  const linked: number[] = [];
+  const ignored: number[] = [];
+  const ids = [...new Set(expIds.map((n) => Number(n)).filter((n) => Number.isInteger(n)))];
+  db.exec("BEGIN");
+  try {
+    db.prepare(`DELETE FROM card_links WHERE role_id = ?`).run(roleId);
+    for (const id of ids) {
+      const c = db.prepare(`SELECT state FROM cards WHERE id = ?`).get(id) as any;
+      if (!c || String(c.state) !== "exp") { ignored.push(id); continue; }
+      db.prepare(`INSERT OR IGNORE INTO card_links (role_id, exp_id) VALUES (?, ?)`).run(roleId, id);
+      linked.push(id);
+    }
+    db.exec("COMMIT");
+  } catch (e) { db.exec("ROLLBACK"); throw e; }
+  return { linked, ignored };
+}
+
+/** 反查：某经验卡被哪些角色绑定（删卡提示 / 跳转用） */
+export function listRolesOfExp(db: DatabaseSync, expId: number): Array<{ id: number; name: string; path: string }> {
+  const rows = db.prepare(`SELECT role_id FROM card_links WHERE exp_id = ? ORDER BY role_id`).all(expId) as any[];
+  const out: Array<{ id: number; name: string; path: string }> = [];
+  for (const r of rows) {
+    const c = db.prepare(`SELECT id, name, path FROM cards WHERE id = ?`).get(Number(r.role_id)) as any;
+    if (c) out.push({ id: Number(c.id), name: String(c.name), path: String(c.path) });
+  }
+  return out;
 }
