@@ -8,7 +8,7 @@
  *   ④ meta.seed_version 对齐
  *
  * 先备份，再事务内执行；失败回滚。
- * 跑法：cd /path/to/dsh-checkout && node --import tsx/esm /path/to/nio-memo/scripts/migrate-seed.ts
+ * 跑法：cd <DSH 检出> && node --import tsx/esm <插件目录>/scripts/migrate-seed.ts
  */
 import * as nodeFs from "node:fs";
 import * as nodeOs from "node:os";

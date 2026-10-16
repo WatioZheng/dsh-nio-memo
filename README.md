@@ -272,20 +272,22 @@ ln -s <DSH 检出>/node_modules/.pnpm/react-dom@*/node_modules/react-dom node_mo
 
 ```bash
 # 从「现行生效铁律」重抽条例 → src/seed.ts（生成物，勿手改）
-node scripts/gen-seed.mjs
+# ⚠ 必须显式指定旧真源目录（该体系已退役，无内置默认路径，缺了会硬报错）
+NIO_MEMO_SEED_CARDS=<旧「记忆卡片」目录> node scripts/gen-seed.mjs
 
 # 老库对齐（条题改名 / 关键词补全 / 来源调整）：幂等、先备份
 cd <DSH 检出> && node --import tsx/esm <插件>/scripts/migrate-seed.ts
 
 # 导入旧 .nio-memory 手记卡（全部为「自定义」+ 打 通用/dsh 标签）：幂等、先备份
-cd <DSH 检出> && node --import tsx/esm <插件>/scripts/import-cards.ts
+cd <DSH 检出> && NIO_MEMO_IMPORT_CARDS=<旧「记忆卡片」目录> node --import tsx/esm <插件>/scripts/import-cards.ts
 
-# 构建
-node build-host.mjs      # → lib/index.js
-node build-client.mjs    # → lib/client.js
+# 构建（esbuild 从 DSH 检出解析；默认取插件同级目录 deepseek-harness，否则用 $DSH_SOURCE 指定）
+DSH_SOURCE=<DSH 检出> node build-host.mjs      # → lib/index.js
+DSH_SOURCE=<DSH 检出> node build-client.mjs    # → lib/client.js
 
-# 测试（三套，均需在 DSH 检出目录下跑，tsx 才能解析依赖）
+# 测试（四套，均需在 DSH 检出目录下跑，tsx 才能解析依赖）
 cd <DSH 检出> && node --import tsx/esm <插件>/src/tests/smoke.test.ts      # 宿主逻辑冒烟
+cd <DSH 检出> && node --import tsx/esm <插件>/src/tests/api.test.ts        # HTTP 数据面
 cd <DSH 检出> && node --import tsx/esm <插件>/src/tests/ssr-perm.test.mts  # 权限板块 SSR
 cd <DSH 检出> && node --import tsx/esm <插件>/src/tests/ssr-tab.test.mts   # 手记 Tab 整页 SSR（防白屏）
 ```
@@ -352,7 +354,8 @@ nio-memo/
    成本重灾区是**动态规矩全文**——每张启用中的动态规矩都整篇进注入。
 4. **路径含卡名**：改名会同步改路径（`nio_memo` 的读取键随之变化，旧路径引用会失效）。
 5. **重启必须授权**：DSH 重启会 SIGTERM 整个 cgroup，会话内后台任务（含工坊哨兵）会被杀掉且无通知。
-6. **脚本源路径**：铁律真源（`gen-seed.mjs` 里 `CARDS`）与旧手记导入（`import-cards.ts`）指向本机 `.nio-memory` 目录，换机需改；
+6. **脚本源路径**：铁律真源与旧手记导入**没有内置默认路径**，必须用环境变量显式指定
+   （`NIO_MEMO_SEED_CARDS` / `NIO_MEMO_IMPORT_CARDS`），缺了会硬报错；构建需 `DSH_SOURCE`（或把 DSH 检出放在插件同级目录）。
    **默认示例卡不走这条路**——正文固定取自仓库内 `content/cards/`。
 7. **备份增长**：两个脚本会自动备份库文件并**保留最近 5 份**。
 
@@ -368,7 +371,8 @@ nio-memo/
   1. 两张示例卡正文**脱敏为通用示例**（占位符 `host-a` / `phone-a` / `100.64.0.0/10` / `192.168.1.100`），正文真源移入仓库内 `content/cards/`；
   2. `gen-seed.mjs` 只从 `content/cards/` 读示例卡，并显式标 `origin: 'default'`；
   3. `db.ts` 两处去掉写死 `default`，改为按 seed 声明的 `origin` 写入；
-  4. 全量重写历史提交，清除已入库的个人标识。
+  4. 全量重写历史提交，清除已入库的个人标识；
+  5. 脚本内**本机绝对路径全部移除**：铁律真源 / 导入源改为环境变量显式指定（缺则硬报错），构建默认改为「插件同级目录 deepseek-harness」+ `DSH_SOURCE` 覆盖。
 - **影响**：本仓默认集内容变化（示例卡正文替换）；**已装插件的既有库不受影响**（播种/回填均幂等，不覆盖用户数据）。
 
 ### v1.1.1（2026-10-15 · 出厂默认开关改为「关」）

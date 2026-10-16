@@ -2,7 +2,7 @@
  * smoke.test.ts — 宿主端逻辑冒烟（不依赖 DSH 宿主）。
  *
  * 跑法（tsx 需在 DSH 检出 cwd 下解析）：
- *   cd /path/to/dsh-checkout && node --import tsx/esm /path/to/nio-memo/src/tests/smoke.test.ts
+ *   cd <DSH 检出> && node --import tsx/esm <插件目录>/src/tests/smoke.test.ts
  *
  * 覆盖：播种 / 默认-自定义来源 / 注入矩阵 / 启停 / 升降 / 创建·编辑·复制 / 幂等 / 路径读取
  */

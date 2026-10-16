@@ -8,7 +8,7 @@
  *   • 已存在的同名卡：若是此前的样板默认卡 → 转为自定义并补标签；否则跳过（显式列出）
  *
  * 幂等：重复跑只补未导入的卡；先备份库文件。
- * 跑法：cd /path/to/dsh-checkout && node --import tsx/esm /path/to/nio-memo/scripts/import-cards.ts
+ * 跑法：cd <DSH 检出> && NIO_MEMO_IMPORT_CARDS=<旧记忆卡片目录> node --import tsx/esm <插件目录>/scripts/import-cards.ts
  */
 import * as nodeFs from "node:fs";
 import * as nodeOs from "node:os";
@@ -32,7 +32,11 @@ function pruneBackups(dbFile: string, keep = 5): void {
 }
 
 
-const CARDS_ROOT = "/path/to/workspace/.nio-memory/记忆卡片";
+const CARDS_ROOT = process.env.NIO_MEMO_IMPORT_CARDS?.trim();
+if (!CARDS_ROOT) {
+  console.error("✗ 请用 NIO_MEMO_IMPORT_CARDS=<旧「记忆卡片」目录> 指定导入源（该体系已退役，需指向归档解包目录）。");
+  process.exit(1);
+}
 
 /** 目录 → 标签（null = 不带标签） */
 const SOURCES: Array<{ dir: string; tag: string | null }> = [

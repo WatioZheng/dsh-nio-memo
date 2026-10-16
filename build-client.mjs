@@ -14,8 +14,9 @@ import { dirname, join } from 'node:path'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
-/** DSH source checkout root; override with $DSH_SOURCE when not the default. */
-const CHECKOUT = process.env.DSH_SOURCE ?? '/path/to/dsh-checkout'
+/** DSH source checkout root; override with $DSH_SOURCE. 默认取插件同级目录。 */
+const DEFAULT_CHECKOUT = join(ROOT, '..', 'deepseek-harness')
+const CHECKOUT = process.env.DSH_SOURCE ?? DEFAULT_CHECKOUT
 
 /** Loader entry name — must equal the patch row `name` EXACTLY (package.json name). */
 const MANIFEST = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
@@ -39,7 +40,7 @@ const EXTERNALS = [
  * esbuild 的解析顺序（align-188/T9 · D3-8，与 build-host.mjs 同款）：
  *   ① node 自己的模块解析 —— 两平台同一条路，且与「装在哪儿」无关；
  *   ② $DSH_SOURCE 指定的检出（显式覆盖，保留）；
- *   ③ 历史默认值 /path/to/dsh-checkout（只作兜底，不再首选）。
+ *   ③ 默认值「插件同级目录下的 deepseek-harness」（只作兜底，不再首选）。
  * 上面的 CHECKOUT 常量保留给使用者作默认提示，不再直接拿来解析。
  */
 function resolveEsbuild() {
@@ -47,7 +48,7 @@ function resolveEsbuild() {
   try {
     return selfRequire.resolve('esbuild')
   } catch { /* 落到检出路径 */ }
-  const checkout = process.env.DSH_SOURCE ?? '/path/to/dsh-checkout'
+  const checkout = process.env.DSH_SOURCE ?? DEFAULT_CHECKOUT
   const store = join(checkout, 'node_modules/.pnpm')
   if (existsSync(store)) {
     const entries = readdirSync(store).filter((name) => name.startsWith('esbuild@')).sort()

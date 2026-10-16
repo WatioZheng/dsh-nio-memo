@@ -6,7 +6,7 @@
  * 不依赖 DSH 宿主（与 smoke.test.ts 同风格）。
  *
  * 跑法（tsx 需在 DSH 检出 cwd 下解析）：
- *   cd /path/to/dsh-checkout && node --import tsx/esm /path/to/nio-memo/src/tests/api.test.ts
+ *   cd <DSH 检出> && node --import tsx/esm <插件目录>/src/tests/api.test.ts
  *
  * 覆盖：all 瘦身与按需取全文 / create 开关守卫 / perm 对索引型拒绝 / switch /
  *       role-exps / exp-roles / update·toggle·delete·restore·purge / tags / batch / 未知端点

@@ -19,7 +19,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url))
  * esbuild 的解析顺序（align-188/T9 · D3-8）：
  *   ① node 自己的模块解析 —— 两平台同一条路，而且与「装在哪儿」无关（原来缺的正是这一级）；
  *   ② $DSH_SOURCE 指定的检出（显式覆盖，保留）；
- *   ③ 历史默认值 /path/to/dsh-checkout —— ⚠ 只在 Linux 且检出恰在那个位置时成立。
+ *   ③ 默认值「插件同级目录下的 deepseek-harness」—— ⚠ 只在检出恰在该位置时成立。
  *      留作兜底以免破坏 127/102 的既有习惯，但**不再首选**：原实现把它写死成默认值，
  *      于是 188（全局 npm 安装、没有该目录）上 `node build-host.mjs` 开箱即失败。
  */
@@ -28,7 +28,7 @@ function resolveEsbuild() {
   try {
     return selfRequire.resolve('esbuild')
   } catch { /* 落到检出路径 */ }
-  const checkout = process.env.DSH_SOURCE ?? '/path/to/dsh-checkout'
+  const checkout = process.env.DSH_SOURCE ?? join(ROOT, '..', 'deepseek-harness')
   const store = join(checkout, 'node_modules/.pnpm')
   if (existsSync(store)) {
     const entries = readdirSync(store).filter((name) => name.startsWith('esbuild@')).sort()

@@ -12,7 +12,7 @@
  *
  * 幂等：同名卡已存在则跳过创建（并如实报出"已存在"），绑定为**并入式**（不覆盖已有绑定）。
  * 预演：`--dry` 只打印将要做什么，不写库、不备份。
- * 跑法：cd /path/to/dsh-checkout && node --import tsx/esm /path/to/nio-memo/scripts/import-roles-exps.ts [--dry]
+ * 跑法：cd <DSH 检出> && NIO_MEMO_IMPORT_CARDS=<旧记忆卡片目录> node --import tsx/esm <插件目录>/scripts/import-roles-exps.ts [--dry]
  */
 import * as nodeFs from "node:fs";
 import * as nodeOs from "node:os";
@@ -22,7 +22,11 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { openMemoDb, createCard, createTag, listTags, setCardTags, listCards, setRoleExps, listRoleExps } from "../src/db";
 
-const CARDS_ROOT = "/path/to/workspace/.nio-memory/记忆卡片";
+const CARDS_ROOT = process.env.NIO_MEMO_IMPORT_CARDS?.trim();
+if (!CARDS_ROOT) {
+  console.error("✗ 请用 NIO_MEMO_IMPORT_CARDS=<旧「记忆卡片」目录> 指定迁移源（该体系已退役，需指向归档解包目录）。");
+  process.exit(1);
+}
 const DRY = process.argv.includes("--dry");
 
 interface Src { dir: string; tag: string | null; state: "role" | "exp"; label: string }

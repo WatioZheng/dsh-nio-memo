@@ -1,7 +1,7 @@
 /**
  * gen-seed.mjs — 从现行生效铁律真源抽取「条例」，生成 src/seed.ts。
  *
- * 真源（102 本机 .nio-memory 现行注入面）：
+ * 真源（本机 .nio-memory 现行注入面；目录由环境变量 NIO_MEMO_SEED_CARDS 指定）：
  *   ① 通用/核心通用/核心通用.md   → 「# 通用铁律（核心）」段
  *   ② 本机/本机.md               → 「# 本机铁律」段
  *   ③ 通用/DSH通用/DSH通用.md     → 「# 通用铁律（DSH 专属）」段
@@ -27,11 +27,13 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
  * F9（T9）：目录不在时**显式报错退出**（不再抛裸 ENOENT）；可用 NIO_MEMO_SEED_CARDS
  *    指向解包后的归档目录（如从 记忆卡片.冻结前备份-*.tar.gz 解出的目录）。
  */
-const CARDS = process.env.NIO_MEMO_SEED_CARDS?.trim() || '/path/to/workspace/.nio-memory/记忆卡片'
-if (!existsSync(CARDS)) {
-  console.error(`✗ 旧记忆卡片真源目录不存在：${CARDS}
-  该目录已退役（2026-10-15「旧记忆卡片已冻结」）；本脚本仅用于从旧真源重建 src/seed.ts。
-  若确有归档副本，请用 NIO_MEMO_SEED_CARDS=<解包目录> 重跑。`)
+const CARDS = process.env.NIO_MEMO_SEED_CARDS?.trim()
+if (!CARDS || !existsSync(CARDS)) {
+  console.error(`✗ 未指定（或不存在）旧「记忆卡片」真源目录：${CARDS ?? '(未设置 NIO_MEMO_SEED_CARDS)'}
+  该体系已退役（2026-10-15「旧记忆卡片已冻结」）；本脚本仅用于从旧真源重建 src/seed.ts。
+  请显式指定目录重跑：NIO_MEMO_SEED_CARDS=<解包目录> node scripts/gen-seed.mjs
+  （目录需含 通用/核心通用/核心通用.md、本机/本机.md、通用/DSH通用/DSH通用.md）
+  ⚠ 默认示例卡不走这条路：其正文固定取自仓库内 content/cards/。`)
   process.exit(1)
 }
 
