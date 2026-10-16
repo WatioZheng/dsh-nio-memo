@@ -18,6 +18,7 @@
     "src",
     "client",
     "lib",
+    "content",
     "scripts",
     "cordis.yml",
     "build-client.mjs",

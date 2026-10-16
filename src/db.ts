@@ -173,7 +173,9 @@ function backfillOrigin(db: DatabaseSync): void {
     for (const c of IRON_CLAUSES) setIron.run(c.title);
     const setCard = db.prepare(`UPDATE cards SET origin = ? WHERE name = ?`);
     for (const c of SEED_RULES) setCard.run(c.origin === "custom" ? "custom" : "default", c.name);
-    for (const c of SAMPLE_CARDS) setCard.run("default", c.name);
+    // ⚠️ 不得写死 "default"：seed 里标了 custom 的卡必须如实回填，否则会被当成官方默认卡
+    //    混进公共发布集（2026-10-16 泄漏事故教训）。
+    for (const c of SAMPLE_CARDS) setCard.run(c.origin === "custom" ? "custom" : "default", c.name);
     db.prepare(`INSERT INTO meta (key, value) VALUES ('origin_v2', '1')`).run();
     db.exec("COMMIT");
   } catch (e) {
@@ -201,7 +203,8 @@ export function seedIfNeeded(db: DatabaseSync): boolean {
       insCard.run(s.name, JSON.stringify(s.keywords), s.path, "rule", s.content, now, now, s.origin ?? "default");
     }
     for (const s of SAMPLE_CARDS) {
-      insCard.run(s.name, JSON.stringify(s.keywords), s.path, "memo", s.content, now, now, "default");
+      // origin 由 seed 声明决定（缺省才视为 default）——不再写死
+      insCard.run(s.name, JSON.stringify(s.keywords), s.path, "memo", s.content, now, now, s.origin ?? "default");
       // 默认卡片可自带权限板块（档位）
       const perm = (s as any).perm as { levels: Array<{ name: string; content: string; color: string }>; current: number } | undefined;
       if (perm?.levels?.length) {

@@ -7,9 +7,11 @@
  *   ③ 通用/DSH通用/DSH通用.md     → 「# 通用铁律（DSH 专属）」段
  * 每段按 `## ` 切条；标题即条题，正文含该条全文（含 8.0/8.1 之类子节）。
  *
- * 样板卡 2 张（仅验链路，不全量搬）：
- *   - 通用/核心通用/手记卡/Tailscale组网.md
- *   - 本机/手记卡/本机主机102.md
+ * 示例卡 2 张（官方默认集的一部分；正文在仓库内 content/cards/，已脱敏为通用示例）：
+ *   - content/cards/Tailscale组网.md
+ *   - content/cards/本机主机102.md
+ * ⚠️ 示例卡正文**只能来自本仓库**：不得再引用任何本机 / 个人真源目录，
+ *    否则会把私人数据带进公共发布集（2026-10-16 泄漏事故的根因，勿回退）。
  *
  * 用法：node scripts/gen-seed.mjs   （在插件根目录跑；只读真源、只写 src/seed.ts）
  */
@@ -148,25 +150,31 @@ const iron = rawIron
     }
   })
 
+/** 示例卡：正文一律取自本仓库 content/cards/，显式标 origin='default'（进公共发布集） */
+const SAMPLE_DIR = join(ROOT, 'content/cards')
+
 const samples = [
   {
     name: 'Tailscale组网',
     keywords: ['Tailscale', 'WireGuard', '组网', '远程访问', 'ZeroTier'],
     path: '备忘/Tailscale组网.md',
-    content: readFileSync(join(CARDS, '通用/核心通用/手记卡/Tailscale组网.md'), 'utf8').trim(),
+    content: readFileSync(join(SAMPLE_DIR, 'Tailscale组网.md'), 'utf8').trim(),
+    origin: 'default',
   },
   {
     name: '本机主机102',
-    keywords: ['102', '本机', '主机', 'host-a', '硬件'],
+    keywords: ['102', '本机', '主机', '硬件'],
     path: '备忘/本机主机102.md',
-    content: readFileSync(join(CARDS, '本机/手记卡/本机主机102.md'), 'utf8').trim(),
+    content: readFileSync(join(SAMPLE_DIR, '本机主机102.md'), 'utf8').trim(),
+    origin: 'default',
   },
   {
     // 默认卡片 + 权限板块（档位 禁止/允许，默认停「禁止」）
     name: 'DSH重启方式',
     keywords: ['重启', 'dsh.service', 'systemd', 'hard-refresh'],
     path: '备忘/DSH重启方式.md',
-    content: readFileSync(join(ROOT, 'content/cards/DSH重启方式.md'), 'utf8').trim(),
+    content: readFileSync(join(SAMPLE_DIR, 'DSH重启方式.md'), 'utf8').trim(),
+    origin: 'default',
     perm: {
       levels: [
         { name: '禁止', content: '不允许。任何 dsh.service 重启（立即或延迟排程）都必须先取得用户明确授权；改完只能汇报「需要重启才生效」，然后停手等用户发话。', color: 'red' },
@@ -186,7 +194,7 @@ const INDEX_NOTE = `# 手记 · 备忘索引
 
 const body = `/**
  * seed.ts — 由 scripts/gen-seed.mjs 生成，勿手改（改真源后重跑）。
- * 真源：102 .nio-memory 现行生效铁律三份 + 两张样板卡。
+ * 真源：铁律三份（本机 .nio-memory 现行注入面）+ content/cards/ 三张默认卡片。
  */
 export interface SeedClause { group: string; title: string; path: string; content: string }
 export interface SeedCard {
