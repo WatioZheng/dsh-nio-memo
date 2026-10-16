@@ -8,8 +8,8 @@
  * 每段按 `## ` 切条；标题即条题，正文含该条全文（含 8.0/8.1 之类子节）。
  *
  * 示例卡 2 张（官方默认集的一部分；正文在仓库内 content/cards/，已脱敏为通用示例）：
- *   - content/cards/Tailscale组网.md
- *   - content/cards/本机主机102.md
+ * 示例卡 2 张（官方默认集的一部分；正文在仓库内 content/cards/，已脱敏为通用示例）：
+ *   - content/cards/本机主机.md
  * ⚠️ 示例卡正文**只能来自本仓库**：不得再引用任何本机 / 个人真源目录，
  *    否则会把私人数据带进公共发布集（2026-10-16 泄漏事故的根因，勿回退）。
  *
@@ -157,17 +157,10 @@ const SAMPLE_DIR = join(ROOT, 'content/cards')
 
 const samples = [
   {
-    name: 'Tailscale组网',
-    keywords: ['Tailscale', 'WireGuard', '组网', '远程访问', 'ZeroTier'],
-    path: '备忘/Tailscale组网.md',
-    content: readFileSync(join(SAMPLE_DIR, 'Tailscale组网.md'), 'utf8').trim(),
-    origin: 'default',
-  },
-  {
-    name: '本机主机102',
-    keywords: ['102', '本机', '主机', '硬件'],
-    path: '备忘/本机主机102.md',
-    content: readFileSync(join(SAMPLE_DIR, '本机主机102.md'), 'utf8').trim(),
+    name: '本机主机',
+    keywords: ['本机', '主机', '硬件'],
+    path: '备忘/本机主机.md',
+    content: readFileSync(join(SAMPLE_DIR, '本机主机.md'), 'utf8').trim(),
     origin: 'default',
   },
   {

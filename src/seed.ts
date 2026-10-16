@@ -74,28 +74,14 @@ export const SEED_RULES: SeedCard[] = [
 
 export const SAMPLE_CARDS: SeedCard[] = [
   {
-    "name": "Tailscale组网",
+    "name": "本机主机",
     "keywords": [
-      "Tailscale",
-      "WireGuard",
-      "组网",
-      "远程访问",
-      "ZeroTier"
-    ],
-    "path": "备忘/Tailscale组网.md",
-    "content": "# Tailscale 组网（WireGuard 数据面）\n\n> 示例卡片 · v1 · 2026-10-10\n> 场景：涉及 **Tailscale / WireGuard 组网**、**远程访问内网设备**、**与 ZeroTier 并存或迁移**时命中本卡。\n> ⚠️ 本卡为**通用示例**：主机名 / IP / 网段一律用占位符，实际使用时替换为自己的值。\n\n## 一句话\n\n**Tailscale 与 ZeroTier 可以并存（Linux / Windows 各用各的虚拟网卡）；手机端同时只能启用一个 VPN；冷启动建连 Tailscale 明显更快。**\n\n## 与 ZeroTier 的对比（经验值）\n\n| 指标 | ZeroTier | **Tailscale** |\n|---|---|---|\n| 数据面 | 自研协议 | **WireGuard** |\n| 首次建连 | 数秒（rendezvous 架构性延迟） | **数百毫秒** |\n| 控制面 | 自建 controller | 官方 SaaS（可自建 Headscale） |\n| Android 客户端 | 社区版维护较慢 | 官方客户端活跃维护 |\n\n## 节点命名（示例）\n\n| 节点 | 地址 | 说明 |\n|---|---|---|\n| `host-a` | `100.64.0.1` | 本机 |\n| `phone-a` | `100.64.0.2` | 手机 |\n| `host-b` | `100.64.0.3` | 备用机 |\n\n> 地址段 `100.64.0.0/10` 是 CGNAT 保留段，Tailscale / ZeroTier 都从这里分配地址。\n\n## 与 ZeroTier 并存的铁律\n\n| 平台 | 能否并存 |\n|---|---|\n| **Linux / Windows** | ✅ 可以（各用各的虚拟网卡） |\n| **Android / iOS** | ❌ **同时只能一个 VPN 生效**（系统限制） |\n| **与原生 WireGuard** | ❌ **不要同跑**（都用 WG 库，已知冲突） |\n\n**三个必避的坑**：\n\n1. **路由别撞** —— 别两边都 advertise 同一网段\n2. **DNS 别抢** —— 关一边（如 `--accept-dns=false`）\n3. **别都当出口节点**\n\n## 安全要点\n\n- 数据面 = **WireGuard**（Curve25519 + ChaCha20-Poly1305，前向保密）\n- **控制面理论可做 MITM**（下发假公钥）→ 用 **Tailnet Lock** 缓解\n- **默认 ACL 常是「全通」** ⚠️ —— 进网后建议立即收紧\n- 身份源是 SSO → **IdP 账号务必开 2FA**\n- **Funnel = 真公网暴露**，别随手开\n- **清理不用的旧节点**（旧密钥仍有效）\n\n## 服务绑定的教训（迁移要点）\n\n服务用 `auto` / `0.0.0.0` 绑定，换 overlay 时零改动；\n凡是**按固定 overlay 地址硬编码**的地方（systemd、防火墙白名单），迁移时都要过一遍。",
-    "origin": "default"
-  },
-  {
-    "name": "本机主机102",
-    "keywords": [
-      "102",
       "本机",
       "主机",
       "硬件"
     ],
-    "path": "备忘/本机主机102.md",
-    "content": "# 本机主机（示例）\n\n> 示例卡片 · v1 · 2026-10-10\n> 场景：需要记录**本机硬件 / 网络 / 磁盘布局**等实况、且希望跨会话复用时命中本卡。\n> ⚠️ 本卡为**通用示例**：主机名 / IP / 型号均为占位符，请替换为自己机器的实测值。\n\n## 本机 = 示例主机\n\n- **系统**：Linux（示例：Ubuntu 24.04 LTS 原生，非 WSL；PID 1 = systemd）\n- **机型**：笔记本 / 台式机（可用 `dmidecode -s system-product-name` 查）\n- **主机名**：`host-a`\n- **网络**：\n  - 局域网：`192.168.1.100`（**DHCP 动态，会变——别写死**；要固定须做 DHCP 保留 / 静态）\n  - overlay：`192.168.192.100`（固定，跨机调用优先用它）\n- **环境**：root 用户；Node v22 + Python 3.12\n- **系统盘**：容量按实际填；LVM 结构示例——\n  - `sda3` → VG `ubuntu-vg` → LV `ubuntu-lv`（ext4，挂载 `/`）\n  - VG 预留空闲空间（备 LVM 快照 / 新 LV）\n  - `/boot` 独立分区；swap 可用根分区上的 `/swap.img`\n\n## 记录要点（写这类卡时值得记什么）\n\n1. 主机名与机型（排查驱动 / 兼容性时用得上）\n2. 局域网地址 + **是否 DHCP 动态**（写死会过时）\n3. overlay / 内网固定地址（跨机调用用）\n4. 磁盘与分区布局（扩容 / 备份前必看）\n5. 已占用的端口与服务绑定方式",
+    "path": "备忘/本机主机.md",
+    "content": "# 本机主机（示例）\n\n> 示例卡片 · v1 · 2026-10-10\n> 场景：需要记录**本机硬件 / 网络 / 磁盘布局**等实况、且希望跨会话复用时命中本卡。\n> ⚠️ 本卡为**通用示例**：主机名 / IP / 型号均为占位符，请替换为自己机器的实测值。\n\n## 本机 = 示例主机\n\n- **系统**：Linux（示例：Ubuntu 24.04 LTS 原生，非 WSL；PID 1 = systemd）\n- **机型**：笔记本 / 台式机（可用 `dmidecode -s system-product-name` 查）\n- **主机名**：`host-a`\n- **网络**：\n  - 局域网：`192.168.1.x`（**DHCP 动态，会变——别写死**；要固定须做 DHCP 保留 / 静态）\n- **环境**：root 用户；Node v22 + Python 3.12\n- **系统盘**：容量按实际填；LVM 结构示例——\n  - `sda3` → VG `ubuntu-vg` → LV `ubuntu-lv`（ext4，挂载 `/`）\n  - VG 预留空闲空间（备 LVM 快照 / 新 LV）\n  - `/boot` 独立分区；swap 可用根分区上的 `/swap.img`\n\n## 记录要点（写这类卡时值得记什么）\n\n1. 主机名与机型（排查驱动 / 兼容性时用得上）\n2. 局域网地址 + **是否 DHCP 动态**（写死会过时）\n3. 磁盘与分区布局（扩容 / 备份前必看）\n4. 已占用的端口与服务绑定方式",
     "origin": "default"
   },
   {

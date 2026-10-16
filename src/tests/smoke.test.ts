@@ -51,7 +51,7 @@ ok("铁律只剩 1 条：手记卡片维护", () => {
   assert.equal(iron[0].title, "手记卡片维护");
   assert.equal(iron[0].origin, "default");
 });
-ok("发布集只含默认：动态规矩 4 条 + 备忘 3 张，全部 default，自定义 0（另加本轮测试卡）", () => {
+ok("发布集只含默认：动态规矩 4 条 + 备忘 2 张，全部 default，自定义 0（另加本轮测试卡）", () => {
   const cards = listCards(db);
   const rules = cards.filter((c) => c.state === "rule");
   const memos = cards.filter((c) => c.state === "memo");
@@ -61,7 +61,7 @@ ok("发布集只含默认：动态规矩 4 条 + 备忘 3 张，全部 default�
     "禁止静默兜底（v2.4.5）", "失败显式化", "改动前备份",
     "凡需用户反馈/决策的，一律走交互性决策（v2.11 · 2026-10-14）",
   ]);
-  assert.equal(memos.filter((c) => c.origin === "default").length, 3);
+  assert.equal(memos.filter((c) => c.origin === "default").length, 2);
   assert.ok(rules.every((c) => c.keywords.length > 0), "每条动态规矩都应有关键词");
   assert.ok(memos.every((c) => c.keywords.length > 0), "备忘卡都应有关键词");
   assert.ok(memos.some((c) => c.name === "DSH重启方式"), "默认集应含带权限板块的 DSH重启方式");
@@ -82,7 +82,7 @@ ok("「手记卡片维护」已改写为手记口径（含多触发点）", () =
 ok("播种幂等（重跑不重复、不覆盖）", () => {
   assert.equal(seedIfNeeded(db), false);
   assert.equal(listIron(db).length, 1);
-  assert.equal(listCards(db).length, 8); // 4 默认规矩 + 3 默认备忘 + 1 排序测试卡
+  assert.equal(listCards(db).length, 7); // 4 默认规矩 + 2 默认备忘 + 1 排序测试卡
 });
 ok("索引说明已落库（非兜底）", () => {
   const n = readIndexNote(db);
@@ -111,8 +111,8 @@ ok("4 条默认动态规矩全文注入", () => {
 });
 ok("备忘卡只进清单，正文不进注入", () => {
   const t = buildInjectText(db);
-  assert.ok(t.includes("- Tailscale组网 ｜ 关键词：Tailscale、WireGuard"));
-  assert.ok(!t.includes("102 已装 Tailscale（1.104.1）"));
+  assert.ok(t.includes("- 本机主机 ｜ 关键词：本机、主机、硬件"));
+  assert.ok(!t.includes("# 本机主机（示例）"), "备忘卡正文不进注入，只进索引清单");
 });
 
 console.log("创建 / 编辑 / 复制");
@@ -151,7 +151,7 @@ ok("版本号：新卡 v1，编辑 +1，启停不 +1", () => {
   purgeCard(db, c.id);
 });
 ok("编辑默认卡：内容变、来源仍为 default", () => {
-  const def = listCards(db, "memo").find((c) => c.name === "Tailscale组网")!;
+  const def = listCards(db, "memo").find((c) => c.name === "本机主机")!;
   const after = updateCard(db, def.id, { content: "自定义改过的内容" });
   assert.equal(after.origin, "default");
   assert.equal(after.content, "自定义改过的内容");
@@ -172,11 +172,11 @@ ok("未知 id 的编辑/复制显式报错", () => {
 });
 
 console.log("启停与升降");
-const memo = listCards(db).find((c) => c.name === "本机主机102")!;
+const memo = listCards(db).find((c) => c.name === "本机主机")!;
 ok("关闭备忘卡 → 移出索引清单，并显式报停用数", () => {
   setCardEnabled(db, memo.id, false);
   const t = buildInjectText(db);
-  assert.ok(!t.includes("- 本机主机102 ｜"));
+  assert.ok(!t.includes("- 本机主机 ｜"));
   assert.ok(/另有 \d+ 张卡片已停用/.test(t));
 });
 ok("停用卡读取可判停（nio_memo 拒绝的依据）", () => {
@@ -184,7 +184,7 @@ ok("停用卡读取可判停（nio_memo 拒绝的依据）", () => {
 });
 ok("重新启用 → 回到清单", () => {
   setCardEnabled(db, memo.id, true);
-  assert.ok(buildInjectText(db).includes("- 本机主机102 ｜"));
+  assert.ok(buildInjectText(db).includes("- 本机主机 ｜"));
 });
 ok("立为规矩 → 全文进注入、清单里消失；路径不变", () => {
   const p0 = getCardById(db, memo.id)!.path;
@@ -192,20 +192,20 @@ ok("立为规矩 → 全文进注入、清单里消失；路径不变", () => {
   assert.equal(up.state, "rule");
   assert.equal(up.path, p0);
   const t = buildInjectText(db);
-  assert.ok(!t.includes("- 本机主机102 ｜"));
-  assert.ok(t.includes("### 本机主机102"));
+  assert.ok(!t.includes("- 本机主机 ｜"));
+  assert.ok(t.includes("### 本机主机"));
 });
 ok("关闭动态规矩 → 全文不再注入", () => {
   setCardEnabled(db, memo.id, false);
-  assert.ok(!buildInjectText(db).includes("### 本机主机102"));
+  assert.ok(!buildInjectText(db).includes("### 本机主机"));
   setCardEnabled(db, memo.id, true);
 });
 ok("降为备忘 → 回到清单注入模式", () => {
   const down = setCardState(db, memo.id, "memo")!;
   assert.equal(down.state, "memo");
   const t = buildInjectText(db);
-  assert.ok(t.includes("- 本机主机102 ｜"));
-  assert.ok(!t.includes("### 本机主机102"));
+  assert.ok(t.includes("- 本机主机 ｜"));
+  assert.ok(!t.includes("### 本机主机"));
 });
 
 console.log("权限板块（并入实体）");
