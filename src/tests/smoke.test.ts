@@ -51,17 +51,19 @@ ok("铁律只剩 1 条：手记卡片维护", () => {
   assert.equal(iron[0].title, "手记卡片维护");
   assert.equal(iron[0].origin, "default");
 });
-ok("发布集只含默认：动态规矩 4 条 + 备忘 2 张，全部 default，自定义 0（另加本轮测试卡）", () => {
+ok("发布集只含默认：动态规矩 5 条 + 备忘 3 张，全部 default，自定义 0（另加本轮测试卡）", () => {
   const cards = listCards(db);
   const rules = cards.filter((c) => c.state === "rule");
   const memos = cards.filter((c) => c.state === "memo");
   // 测试前已建过 1 张自定义卡（排序口径测试），故这里只断言默认集部分
-  assert.equal(rules.filter((c) => c.origin === "default").length, 4);
-  assert.deepEqual(rules.filter((c) => c.origin === "default").map((c) => c.name), [
+  const defRules = rules.filter((c) => c.origin === "default");
+  assert.equal(defRules.length, 5);
+  assert.deepEqual(defRules.map((c) => c.name).sort(), [
     "禁止静默兜底（v2.4.5）", "失败显式化", "改动前备份",
     "凡需用户反馈/决策的，一律走交互性决策（v2.11 · 2026-10-14）",
-  ]);
-  assert.equal(memos.filter((c) => c.origin === "default").length, 2);
+    "语言规范",
+  ].sort());
+  assert.equal(memos.filter((c) => c.origin === "default").length, 3);
   assert.ok(rules.every((c) => c.keywords.length > 0), "每条动态规矩都应有关键词");
   assert.ok(memos.every((c) => c.keywords.length > 0), "备忘卡都应有关键词");
   assert.ok(memos.some((c) => c.name === "DSH重启方式"), "默认集应含带权限板块的 DSH重启方式");
@@ -82,7 +84,7 @@ ok("「手记卡片维护」已改写为手记口径（含多触发点）", () =
 ok("播种幂等（重跑不重复、不覆盖）", () => {
   assert.equal(seedIfNeeded(db), false);
   assert.equal(listIron(db).length, 1);
-  assert.equal(listCards(db).length, 7); // 4 默认规矩 + 2 默认备忘 + 1 排序测试卡
+  assert.equal(listCards(db).length, 9); // 5 默认规矩（含 语言规范）+ 3 默认备忘 + 1 排序测试卡
 });
 ok("索引说明已落库（非兜底）", () => {
   const n = readIndexNote(db);

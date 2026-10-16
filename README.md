@@ -2,7 +2,7 @@
 
 > **一句话**：把「记忆卡片」从对话记忆系统里剥离出来的**极简卡片库插件**——全局部署、零依赖、无 LLM；卡片可以**每轮注入**，也可以**按需取用**，还可以挂上**多档位的软权限**。
 >
-> 当前版本：**v1.1.2（默认示例卡脱敏 + 来源判定加固）** ｜ 归属项目：zt工坊 `nio-memo`
+> 当前版本：**v1.1.3（按标签分流发布 + seed 按状态播种）** ｜ 归属项目：zt工坊 `nio-memo`
 
 ---
 
@@ -281,6 +281,13 @@ cd <DSH 检出> && node --import tsx/esm <插件>/scripts/migrate-seed.ts
 # 导入旧 .nio-memory 手记卡（全部为「自定义」+ 打 通用/dsh 标签）：幂等、先备份
 cd <DSH 检出> && NIO_MEMO_IMPORT_CARDS=<旧「记忆卡片」目录> node --import tsx/esm <插件>/scripts/import-cards.ts
 
+# 按标签把本地手记库单向导出为「卡片内容仓」（真源永远是本地库；仓库只是产物）
+#   路由（fail-closed，自上而下）：① 标签「本机」→ 不导出 ② origin=default → public+internal
+#                                ③ 标签「通用」/「dsh」→ 仅 internal ④ 其余（自定义无标签）→ 不导出
+#   导出时会剥离卡尾内部来源标注（📦 通用记忆… / 来源：…），本地库保持原样
+cd <DSH 检出> && node --import tsx/esm <插件>/scripts/export-cards.ts --target public   --out <公共卡片仓目录>
+cd <DSH 检出> && node --import tsx/esm <插件>/scripts/export-cards.ts --target internal --out <内部卡片仓目录>
+
 # 构建（esbuild 从 DSH 检出解析；默认取插件同级目录 deepseek-harness，否则用 $DSH_SOURCE 指定）
 DSH_SOURCE=<DSH 检出> node build-host.mjs      # → lib/index.js
 DSH_SOURCE=<DSH 检出> node build-client.mjs    # → lib/client.js
@@ -320,11 +327,12 @@ nio-memo/
 ├── client/
 │   ├── index.tsx           # 「手记」Tab（规矩 / 备忘 / 设置 + 权限板块）
 │   └── md.ts               # 极简 Markdown 解析（纯函数，含表格；保证推进不空转）
-├── content/cards/          # 默认卡片正文源（供 gen-seed 引用）
+├── content/cards/          # 默认卡片正文源（供 gen-seed 引用；4 张）
 └── scripts/
-    ├── gen-seed.mjs        # 从真源抽条例 → src/seed.ts
+    ├── gen-seed.mjs        # 从真源抽条例 + content/cards → src/seed.ts
     ├── migrate-seed.ts     # 老库对齐（幂等 + 备份 + 保留最近 5 份）
-    └── import-cards.ts     # 导入旧手记卡（幂等 + 备份）
+    ├── import-cards.ts     # 导入旧手记卡（幂等 + 备份）
+    └── export-cards.ts     # 按标签把本地库单向导出为「卡片内容仓」（只读库、不碰本地库）
 ```
 
 ---
@@ -336,11 +344,11 @@ nio-memo/
 | 区 | 条目 | 说明 |
 |---|---|---|
 | 铁律 | **手记卡片维护** | 写卡触发点（记住这个 / 这是铁律 / 明确纠正 / 可复用新事实 / 同一问题第二次 / 偏好口径）+ 落位口径（**默认从严**：除非你说「这是规矩」，否则只能落备忘）+ 维护口径；**自带权限板块**（禁止 / 允许，默认「禁止」＝agent 不得自行加卡） |
-| 动态规矩 | **禁止静默兜底**、**失败显式化**、**改动前备份**、**交互性决策** | 4 条默认规矩，每轮全文注入 |
-| 备忘 | **本机主机**、**DSH重启方式** | 两张都是**通用示例卡**（正文在 `content/cards/`，已脱敏：主机名 / IP / 设备名 / 拓扑一律占位符）；`DSH重启方式` 是通用版重启手册（含编号纪律、连坐杀哨、硬刷新），**自带权限板块**（禁止 / 允许，默认「禁止」＝重启前必须先取得授权） |
+| 动态规矩 | **禁止静默兜底**、**失败显式化**、**改动前备份**、**交互性决策**、**语言规范** | 5 条默认规矩，每轮全文注入 |
+| 备忘 | **本机主机**、**不擅自增加功能（最小改动原则）**、**DSH重启方式** | `本机主机` 是**通用示例卡**（正文在 `content/cards/`，已脱敏：主机名 / IP / 设备名 / 拓扑一律占位符）；`DSH重启方式` 是通用版重启手册（含编号纪律、连坐杀哨、硬刷新），**自带权限板块**（禁止 / 允许，默认「禁止」＝重启前必须先取得授权） |
 
-> ⚠️ **示例卡正文只能来自本仓库 `content/cards/`**，禁止引用任何本机 / 个人真源目录（否则私人数据会随默认集进公共仓库）。
-> `scripts/gen-seed.mjs` 里已固定这一约束；`src/db.ts` 播种与回填 `origin` 时也不再写死 `default`。
+> ⚠️ **默认卡正文只能来自本仓库 `content/cards/`**，禁止引用任何本机 / 个人真源目录（否则私人数据会随默认集进公共仓库）。
+> `scripts/gen-seed.mjs` 里已固定这一约束；`src/db.ts` 播种时 `origin` / `state` 均按 seed 声明写入，不再写死。
 
 > 旧系统的其余手记卡（49 张）属于**使用者数据**：可用 `scripts/import-cards.ts` 在本机导入（全部落为「自定义」），**不随本仓库分发**。
 
@@ -362,6 +370,13 @@ nio-memo/
 ---
 
 ## 十二、版本与变更记录
+
+### v1.1.3（2026-10-16 · 按标签分流发布 + seed 支持按状态播种）
+
+- **默认集扩为 9 项**：动态规矩由 4 条增至 **5 条**（新增 `语言规范`），备忘由 2 张增至 **3 张**（新增 `不擅自增加功能（最小改动原则）`）。两者正文均取自 `content/cards/`。
+- **`gen-seed.mjs` / `src/db.ts` 支持按状态播种**：`SeedCard` 新增可选 `state: 'memo' | 'rule'`，播种时不再一律写 `memo`——否则一张动态规矩会以「备忘」身份装到别人机器上。
+- **新增 `scripts/export-cards.ts`**：把本地手记库按标签**单向导出**为卡片内容仓（路由 fail-closed：标签`本机`不导出；`origin=default`→public+internal；标签`通用`/`dsh`→仅 internal；自定义且无标签→不导出）。导出时剥离卡尾内部来源标注，**本地库保持原样**。
+- ⚠️ **本地手记库需新增标签「本机」**，用于标记只在本机生效、不对外分发的卡片；未打标签的自定义卡一律不外发（fail-closed）。
 
 ### v1.1.2（2026-10-16 · 默认示例卡脱敏 + 来源判定加固）
 

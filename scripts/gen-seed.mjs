@@ -7,9 +7,11 @@
  *   ③ 通用/DSH通用/DSH通用.md     → 「# 通用铁律（DSH 专属）」段
  * 每段按 `## ` 切条；标题即条题，正文含该条全文（含 8.0/8.1 之类子节）。
  *
- * 示例卡 2 张（官方默认集的一部分；正文在仓库内 content/cards/，已脱敏为通用示例）：
- * 示例卡 2 张（官方默认集的一部分；正文在仓库内 content/cards/，已脱敏为通用示例）：
- *   - content/cards/本机主机.md
+ * 默认卡片 4 张（官方默认集；正文在仓库内 content/cards/，已脱敏 / 去内部标注）：
+ *   - content/cards/本机主机.md                        （备忘）
+ *   - content/cards/语言规范.md                        （动态规矩）
+ *   - content/cards/不擅自增加功能（最小改动原则）.md   （备忘）
+ *   - content/cards/DSH重启方式.md                     （备忘，自带权限板块）
  * ⚠️ 示例卡正文**只能来自本仓库**：不得再引用任何本机 / 个人真源目录，
  *    否则会把私人数据带进公共发布集（2026-10-16 泄漏事故的根因，勿回退）。
  *
@@ -152,7 +154,8 @@ const iron = rawIron
     }
   })
 
-/** 示例卡：正文一律取自本仓库 content/cards/，显式标 origin='default'（进公共发布集） */
+/** 默认卡片：正文一律取自本仓库 content/cards/，显式标 origin='default'（进公共发布集）。
+ *  state 决定播种到哪个区：缺省 memo（备忘）；'rule' = 动态规矩（每轮全文注入）。 */
 const SAMPLE_DIR = join(ROOT, 'content/cards')
 
 const samples = [
@@ -161,6 +164,22 @@ const samples = [
     keywords: ['本机', '主机', '硬件'],
     path: '备忘/本机主机.md',
     content: readFileSync(join(SAMPLE_DIR, '本机主机.md'), 'utf8').trim(),
+    origin: 'default',
+  },
+  {
+    // 动态规矩（state=rule）：每轮全文注入，可启停 / 可降为备忘
+    name: '语言规范',
+    keywords: ['语言规范', '默认中文'],
+    path: '规矩/动态/语言规范.md',
+    content: readFileSync(join(SAMPLE_DIR, '语言规范.md'), 'utf8').trim(),
+    origin: 'default',
+    state: 'rule',
+  },
+  {
+    name: '不擅自增加功能（最小改动原则）',
+    keywords: ['擅自增加', '未经同意', '功能膨胀', '最小改动', '先问再做'],
+    path: '备忘/不擅自增加功能（最小改动原则）.md',
+    content: readFileSync(join(SAMPLE_DIR, '不擅自增加功能（最小改动原则）.md'), 'utf8').trim(),
     origin: 'default',
   },
   {
@@ -194,6 +213,8 @@ const body = `/**
 export interface SeedClause { group: string; title: string; path: string; content: string }
 export interface SeedCard {
   name: string; keywords: string[]; path: string; content: string; origin?: 'default' | 'custom'
+  /** 播种到哪个区：缺省 memo（备忘）；'rule' = 动态规矩（每轮全文注入） */
+  state?: 'memo' | 'rule'
   /** 默认权限板块（可选）：档位 名/内容/颜色 + 默认当前档序号 */
   perm?: { levels: Array<{ name: string; content: string; color: string }>; current: number }
 }

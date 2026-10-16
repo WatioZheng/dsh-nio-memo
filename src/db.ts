@@ -203,8 +203,9 @@ export function seedIfNeeded(db: DatabaseSync): boolean {
       insCard.run(s.name, JSON.stringify(s.keywords), s.path, "rule", s.content, now, now, s.origin ?? "default");
     }
     for (const s of SAMPLE_CARDS) {
-      // origin 由 seed 声明决定（缺省才视为 default）——不再写死
-      insCard.run(s.name, JSON.stringify(s.keywords), s.path, "memo", s.content, now, now, s.origin ?? "default");
+      // origin / state 均由 seed 声明决定（缺省：default / memo）——不再写死
+      const st = (s as any).state === "rule" ? "rule" : "memo";
+      insCard.run(s.name, JSON.stringify(s.keywords), s.path, st, s.content, now, now, s.origin ?? "default");
       // 默认卡片可自带权限板块（档位）
       const perm = (s as any).perm as { levels: Array<{ name: string; content: string; color: string }>; current: number } | undefined;
       if (perm?.levels?.length) {
