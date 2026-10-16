@@ -142,17 +142,33 @@ const seedRules = DEMOTE_TO_RULES.filter((t) => DEFAULT_RULES.includes(t)).map((
 /** 条题改名（2026-10-15 用户：记忆卡片维护 → 手记卡片维护） */
 const TITLE_OVERRIDES = { '记忆卡片维护': '手记卡片维护' }
 
-const iron = rawIron
-  .filter((c) => !DEMOTE_TO_RULES.includes(c.title))
-  .map((c) => {
-    const title = TITLE_OVERRIDES[c.title] ?? c.title
-    return {
-      ...c,
-      title,
-      path: `规矩/铁律/${title}.md`,
-      content: OVERRIDES[c.title] ?? c.content,
-    }
-  })
+/**
+ * 追加铁律（2026-10-16，用户指令）：由运行时动态规矩升为铁律并固化进 seed。
+ * 正文真源在**仓库内** content/iron/，不依赖已冻结（chattr +i）的旧「记忆卡片」真源。
+ */
+const EXTRA_IRON = [
+  {
+    group: 'DSH',
+    title: '卡片内容过时需告知修改',
+    path: '规矩/铁律/卡片内容过时需告知修改.md',
+    content: readFileSync(join(ROOT, 'content/iron/卡片内容过时需告知修改.md'), 'utf8').trim(),
+  },
+]
+
+const iron = [
+  ...rawIron
+    .filter((c) => !DEMOTE_TO_RULES.includes(c.title))
+    .map((c) => {
+      const title = TITLE_OVERRIDES[c.title] ?? c.title
+      return {
+        ...c,
+        title,
+        path: `规矩/铁律/${title}.md`,
+        content: OVERRIDES[c.title] ?? c.content,
+      }
+    }),
+  ...EXTRA_IRON,
+]
 
 /** 默认卡片：正文一律取自本仓库 content/cards/，显式标 origin='default'（进公共发布集）。
  *  state 决定播种到哪个区：缺省 memo（备忘）；'rule' = 动态规矩（每轮全文注入）。 */
@@ -208,7 +224,7 @@ const INDEX_NOTE = `# 手记 · 备忘索引
 
 const body = `/**
  * seed.ts — 由 scripts/gen-seed.mjs 生成，勿手改（改真源后重跑）。
- * 真源：铁律三份（本机 .nio-memory 现行注入面）+ content/cards/ 三张默认卡片。
+ * 真源：铁律三份（本机 .nio-memory 现行注入面）+ content/iron/ 追加铁律 + content/cards/ 默认卡片。
  */
 export interface SeedClause { group: string; title: string; path: string; content: string }
 export interface SeedCard {

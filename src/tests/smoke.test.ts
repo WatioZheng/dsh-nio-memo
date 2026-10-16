@@ -45,11 +45,15 @@ const dir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), "nio-memo-smoke-")
 const db = openMemoDb(dir);
 
 console.log("播种与来源");
-ok("铁律只剩 1 条：手记卡片维护", () => {
+ok("铁律共 2 条：手记卡片维护 + 卡片内容过时需告知修改，均 default", () => {
   const iron = listIron(db);
-  assert.equal(iron.length, 1);
+  assert.equal(iron.length, 2);
   assert.equal(iron[0].title, "手记卡片维护");
   assert.equal(iron[0].origin, "default");
+  // 2026-10-16 用户指令：由动态规矩升为铁律并固化进 seed（origin 必须是 default，UI 不得显示「自定义」）
+  assert.equal(iron[1].title, "卡片内容过时需告知修改");
+  assert.equal(iron[1].origin, "default");
+  assert.ok(iron[1].content.includes("告知用户") && iron[1].content.includes("准许"));
 });
 ok("发布集只含默认：动态规矩 5 条 + 备忘 3 张，全部 default，自定义 0（另加本轮测试卡）", () => {
   const cards = listCards(db);
@@ -83,7 +87,7 @@ ok("「手记卡片维护」已改写为手记口径（含多触发点）", () =
 });
 ok("播种幂等（重跑不重复、不覆盖）", () => {
   assert.equal(seedIfNeeded(db), false);
-  assert.equal(listIron(db).length, 1);
+  assert.equal(listIron(db).length, 2);
   assert.equal(listCards(db).length, 9); // 5 默认规矩（含 语言规范）+ 3 默认备忘 + 1 排序测试卡
 });
 ok("索引说明已落库（非兜底）", () => {
